@@ -2,41 +2,64 @@
 # * Set the Controls Screen - by FL (Credits will be apreciated)
 #===============================================================================
 #
-# This script is for Pokémon Essentials. It's make a "Set the controls"
-# option screen allowing the player to map the actions to the keys in keyboard,
-# customizing the controls.
+# This script is for Pokémon Essentials. It creates a "Set the controls" screen
+# on pause menu, allowing the player to map the actions to the keys in keyboard, 
+# ignoring the values defined on F1. You can also define the default controls.
 #
-#===============================================================================
+#== INSTALLATION ===============================================================
 #
-# To this script works, put it between PSystem_Controls and PSystem_System.
+# To this script works, put it above main OR convert into a plugin.
 #
-# To this screen be displayed in the pause menu, in PScreen_PauseMenu script,
-# before line
-# 'commands[cmdDebug = commands.length]    = _INTL("Debug") if $DEBUG' add:
+#== NOTES ======================================================================
 #
-# cmdControls=-1
-# commands[cmdControls=commands.length]=_INTL("Controls")
-#
-# Before line 'elsif cmdOption>=0 && command==cmdOption' add:
-#
-# elsif cmdControls>=0 && command==cmdControls
-#   scene=PokemonControlsScene.new
-#   screen=PokemonControls.new(scene)
-#   pbFadeOutIn(99999) {
-#     screen.pbStartScreen
-#   }
-#
-# Using the last five lines you can start this scene in other places like at
-# an event.
-#
-# Note that this script, by default, doesn't allows the player to redefine some
-# commands like F8 (screenshot key), but if the player assign an action to
-# this key, like the "Cancel" action, this key will do this action AND take
-# screenshots when pressed. Remember that F12 will reset the game.
+# This script, by default, doesn't allows the player to redefine some commands
+# like F8 (screenshot key), but if the player assign an action to this key,
+# like the "Cancel" action, this key will do this action AND take screenshots
+# when pressed. Remember that F12 will reset the game.
 #
 #===============================================================================
 
+if !PluginManager.installed?("Set the Controls Screen")
+  PluginManager.register({                                                 
+    :name    => "Set the Controls Screen",                                        
+    :version => "1.0.3",                                                     
+    :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
+    :credits => "FL"
+  })
+end
+
+# Open the controls UI.
+# You can call this method directly from other places like an event.
+def openSetControlsUI(menuToRefresh=nil)
+  scene=PokemonControlsScene.new
+  screen=PokemonControls.new(scene)
+  pbFadeOutIn {
+    screen.pbStartScreen
+    menuToRefresh.pbRefresh if menuToRefresh
+  }
+end
+
 module Keys
+  # Here you can change the number of keys for each action and the
+  # default values
+  def self.defaultControls
+    return [
+      ControlConfig.new(_INTL("Down"),_INTL("Down")),
+      ControlConfig.new(_INTL("Left"),_INTL("Left")),
+      ControlConfig.new(_INTL("Right"),_INTL("Right")),
+      ControlConfig.new(_INTL("Up"),_INTL("Up")),
+      ControlConfig.new(_INTL("Action"),_INTL("C")),
+      ControlConfig.new(_INTL("Action"),_INTL("Enter")),
+      ControlConfig.new(_INTL("Action"),_INTL("Space")),
+      ControlConfig.new(_INTL("Cancel"),_INTL("X")),
+      ControlConfig.new(_INTL("Cancel"),_INTL("Esc")),
+      ControlConfig.new(_INTL("Run/Sort"),_INTL("Z")),
+      ControlConfig.new(_INTL("Scroll up"),_INTL("A")),
+      ControlConfig.new(_INTL("Scroll down"),_INTL("S")),
+      ControlConfig.new(_INTL("Registered"),_INTL("D"))
+    ]
+  end 
+
   # Available keys
   CONTROLSLIST = {
     # Mouse buttons
@@ -164,29 +187,8 @@ module Keys
     # Disc keys
   }
 
-  # Here you can change the number of keys for each action and the
-  # default values
-  def self.defaultControls
-    return [
-      ControlConfig.new(_INTL("Down"),_INTL("Down")),
-      ControlConfig.new(_INTL("Left"),_INTL("Left")),
-      ControlConfig.new(_INTL("Right"),_INTL("Right")),
-      ControlConfig.new(_INTL("Up"),_INTL("Up")),
-      ControlConfig.new(_INTL("Action"),_INTL("C")),
-      ControlConfig.new(_INTL("Action"),_INTL("Enter")),
-      ControlConfig.new(_INTL("Action"),_INTL("Space")),
-      ControlConfig.new(_INTL("Cancel"),_INTL("X")),
-      ControlConfig.new(_INTL("Cancel"),_INTL("Esc")),
-      ControlConfig.new(_INTL("Run/Sort"),_INTL("Z")),
-      ControlConfig.new(_INTL("Scroll down"),_INTL("Page Down")),
-      ControlConfig.new(_INTL("Scroll up"),_INTL("Page Up")),
-      ControlConfig.new(_INTL("Registered"),_INTL("F")),
-      ControlConfig.new(_INTL("Registered"),_INTL("F5"))
-    ]
-  end 
-
   def self.getKeyName(keyCode)
-    ret  = CONTROLSLIST.index(keyCode)
+    ret  = CONTROLSLIST.key(keyCode)
     return ret ? ret : (keyCode==0 ? _INTL("None") : "?")
   end 
 
@@ -223,9 +225,61 @@ end
 
 module Input
   class << self
-    alias :buttonToKeyOldFL :buttonToKey
-    # Here I redefine this method with my controlAction.
-    # Note that I don't declare action for all commands.
+    if !method_defined?(:_old_fl_press?)
+      alias :_old_fl_press? :press?
+      def press?(button)
+        key = buttonToKey(button)
+        return key ? pressex_array?(key) : _old_fl_press?(button)
+      end
+
+      alias :_old_fl_trigger? :trigger?
+      def trigger?(button)
+        key = buttonToKey(button)
+        return key ? triggerex_array?(key) : _old_fl_trigger?(button)
+      end
+
+      alias :_old_fl_repeat? :repeat?
+      def repeat?(button)
+        key = buttonToKey(button)
+        return key ? repeatex_array?(key) : _old_fl_repeat?(button)
+      end
+
+      alias :_old_fl_release? :release?
+      def release?(button)
+        key = buttonToKey(button)
+        return key ? releaseex_array?(key) : _old_fl_release?(button)
+      end
+    end
+
+    def pressex_array?(array)
+      for item in array
+        return true if pressex?(item)
+      end
+      return false
+    end
+
+    def triggerex_array?(array)
+      for item in array
+        return true if triggerex?(item)
+      end
+      return false
+    end
+
+    def repeatex_array?(array)
+      for item in array
+        return true if repeatex?(item)
+        return true if triggerex?(item) # Fix for MKXP-Z issue
+      end
+      return false
+    end
+
+    def releaseex_array?(array)
+      for item in array
+        return true if releaseex?(item)
+      end
+      return false
+    end
+
     def buttonToKey(button)
       $PokemonSystem = PokemonSystem.new if !$PokemonSystem
       case button
@@ -237,34 +291,21 @@ module Input
           return $PokemonSystem.getGameControlCodes(_INTL("Right"))
         when Input::UP
           return $PokemonSystem.getGameControlCodes(_INTL("Up"))
-        when Input::A # Z, W, Y, Shift
+        when Input::ACTION # Z, W, Y, Shift
           return $PokemonSystem.getGameControlCodes(_INTL("Run/Sort"))
-        when Input::B # X, ESC
+        when Input::BACK # X, ESC
           return $PokemonSystem.getGameControlCodes(_INTL("Cancel"))
-        when Input::C # C, ENTER, Space
+        when Input::USE # C, ENTER, Space
           return $PokemonSystem.getGameControlCodes(_INTL("Action"))
-        when Input::L # A, Q, Page Up
+        when Input::AUX1 # A, Q, Page Up
           return $PokemonSystem.getGameControlCodes(_INTL("Scroll up"))
-        when Input::R # S, Page Down
+        when Input::AUX2 # S, Page Down
           return $PokemonSystem.getGameControlCodes(_INTL("Scroll down"))
-#        when Input::SHIFT
-#          return [0x10] # Shift
-#        when Input::CTRL
-#          return [0x11] # Ctrl
-#        when Input::ALT
-#          return [0x12] # Alt
-        when Input::F5 # F, F5, Tab
+        when Input::SPECIAL # F, F5, Tab
           return $PokemonSystem.getGameControlCodes(_INTL("Registered"))
-#        when Input::F6
-#          return [0x75] # F6
-#        when Input::F7
-#          return [0x76] # F7
-#        when Input::F8
-#          return [0x77] # F8
-#        when Input::F9
-#          return [0x78] # F9
+          # AUX1 and AUX2 unused
         else
-          return buttonToKeyOldFL(button)
+          return nil
       end
     end
   end
@@ -388,7 +429,7 @@ class PokemonControlsScene
           @sprites["controlwindow"].itemCount-1))
           exit = true
           if(@sprites["controlwindow"].changed &&
-              Kernel.pbConfirmMessage(_INTL("Save changes?")))
+              Kernel.pbConfirmMessage(_INTL("Keep changes?")))
             @sprites["textbox"].text = "" # Visual effect
             newControls = @sprites["controlwindow"].controls
             emptyCommand = false
@@ -444,3 +485,13 @@ class PokemonSystem
     return ret
   end
 end
+
+MenuHandlers.add(:pause_menu, :controls, {
+  "name"      => _INTL("Controls"),
+  "order"     => 75,
+  "effect"    => proc { |menu|
+    pbPlayDecisionSE
+    openSetControlsUI(menu)
+    next false
+  }
+})
