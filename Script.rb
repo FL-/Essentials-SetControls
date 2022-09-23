@@ -24,7 +24,7 @@
 if !PluginManager.installed?("Set the Controls Screen")
   PluginManager.register({                                                 
     :name    => "Set the Controls Screen",                                        
-    :version => "1.1",                                                     
+    :version => "1.1.1",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
     :credits => "FL"
   })
@@ -277,6 +277,49 @@ module Input
         return true if releaseex?(item)
       end
       return false
+    end
+
+    def dir4
+      return 0 if press?(DOWN) && press?(UP)
+      return 0 if press?(LEFT) && press?(RIGHT)
+      for button in [DOWN,LEFT,RIGHT,UP]
+        return button if press?(button)
+      end
+      return 0
+    end
+
+    def dir8
+      buttons = []
+      for b in [DOWN,LEFT,RIGHT,UP]
+        buttons.push(b) if press?(b)
+      end
+      if buttons.length==0
+        return 0
+      elsif buttons.length==1
+        return buttons[0]
+      elsif buttons.length==2
+        return 0 if (buttons[0]==DOWN && buttons[1]==UP)
+        return 0 if (buttons[0]==LEFT && buttons[1]==RIGHT)
+      end
+      up_down    = 0
+      left_right = 0
+      for b in buttons
+        up_down    = b if up_down==0 && (b==UP || b==DOWN)
+        left_right = b if left_right==0 && (b==LEFT || b==RIGHT)
+      end
+      if up_down==DOWN
+        return 1 if left_right==LEFT
+        return 3 if left_right==RIGHT
+        return 2
+      elsif up_down==UP
+        return 7 if left_right==LEFT
+        return 9 if left_right==RIGHT
+        return 8
+      else
+        return 4 if left_right==LEFT
+        return 6 if left_right==RIGHT
+        return 0
+      end
     end
 
     def buttonToKey(button)
