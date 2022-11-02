@@ -24,7 +24,7 @@
 if !PluginManager.installed?("Set the Controls Screen")
   PluginManager.register({                                                 
     :name    => "Set the Controls Screen",                                        
-    :version => "1.1.1",                                                     
+    :version => "1.1.2",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
     :credits => "FL"
   })
@@ -339,9 +339,9 @@ module Input
           return $PokemonSystem.game_control_code("Cancel")
         when Input::USE # C, ENTER, Space
           return $PokemonSystem.game_control_code("Action")
-        when Input::AUX1 # A, Q, Page Up
+        when Input::JUMPUP # A, Q, Page Up
           return $PokemonSystem.game_control_code("Scroll Up")
-        when Input::AUX2 # S, Page Down
+        when Input::JUMPDOWN # S, Page Down
           return $PokemonSystem.game_control_code("Scroll Down")
         when Input::SPECIAL # F, F5, Tab
           return $PokemonSystem.game_control_code("Ready Menu")
