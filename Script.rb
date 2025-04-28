@@ -24,11 +24,15 @@
 if !PluginManager.installed?("Set the Controls Screen")
   PluginManager.register({                                                 
     :name    => "Set the Controls Screen",                                        
-    :version => "1.1.2",                                                     
+    :version => "1.2",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
     :credits => "FL"
   })
 end
+
+# Change it to false for easily disable this script, without affecting saves.
+# After changing this value, close and open the game window.
+SET_CONTROLS_ENABLED = false
 
 # Open the controls UI.
 # You can call this method directly from other places like an event.
@@ -41,29 +45,45 @@ def open_set_controls_ui(menu_to_refresh=nil)
   }
 end
 
+module Input
+  # Used this, so can use the same variable for both gamepad and keyboard.
+  GAMEPAD_OFFSET = 500
+  AXIS_OFFSET = 100 + GAMEPAD_OFFSET
+  AXIS_MIN = 0.5
+  AXIS_MAX = 0.95
+
+  # Using this for manual check
+  LEFT_STICK_LEFT   = 0x00 + AXIS_OFFSET
+  LEFT_STICK_RIGHT  = 0x01 + AXIS_OFFSET
+  LEFT_STICK_DOWN   = 0x02 + AXIS_OFFSET
+  LEFT_STICK_UP     = 0x03 + AXIS_OFFSET
+  RIGHT_STICK_LEFT  = 0x04 + AXIS_OFFSET
+  RIGHT_STICK_RIGHT = 0x05 + AXIS_OFFSET
+  RIGHT_STICK_DOWN  = 0x06 + AXIS_OFFSET
+  RIGHT_STICK_UP    = 0x07 + AXIS_OFFSET
+  LEFT_TRIGGER      = 0x09 + AXIS_OFFSET
+  RIGHT_TRIGGER     = 0x0B + AXIS_OFFSET
+end
+
 module Keys
-  # Here you can change the number of keys for each action and the
-  # default values
+  # Here you can change the default values
   def self.default_controls
-    return [
-      ControlConfig.new("Down", "Down"),
-      ControlConfig.new("Left", "Left"),
-      ControlConfig.new("Right", "Right"),
-      ControlConfig.new("Up", "Up"),
-      ControlConfig.new("Action", "C"),
-      ControlConfig.new("Action", "Enter"),
-      ControlConfig.new("Action", "Space"),
-      ControlConfig.new("Cancel",  "X"),
-      ControlConfig.new("Cancel", "Esc"),
-      ControlConfig.new("Menu", "Z"),
-      ControlConfig.new("Scroll Up", "A"),
-      ControlConfig.new("Scroll Down", "S"),
-      ControlConfig.new("Ready Menu", "D")
-    ]
+    return (
+      ControlConfig.multiple_new("Down", ["Down", "D-Pad Down"]) +
+      ControlConfig.multiple_new("Left", ["Left", "D-Pad Left"]) +
+      ControlConfig.multiple_new("Right", ["Right", "D-Pad Right"]) +
+      ControlConfig.multiple_new("Up", ["Up", "D-Pad Up"]) +
+      ControlConfig.multiple_new("Action", ["C","Enter","Space", "Button A"]) +
+      ControlConfig.multiple_new("Cancel", ["X","Esc", "Numpad 0", "Button B"])+
+      ControlConfig.multiple_new("Menu", ["Z", "Shift", "Button X"]) +
+      ControlConfig.multiple_new("Scroll Up", ["A", "Right Shoulder"]) +
+      ControlConfig.multiple_new("Scroll Down", ["S", "Left Shoulder"]) +
+      ControlConfig.multiple_new("Ready Menu", ["D","Button Y"]) 
+    )
   end 
 
-  # Available keys
-  CONTROLS_LIST = {
+  # Available keys in keyboard
+  KEYBOARD_LIST = {
     # Mouse buttons
     "Backspace"    => 0x08,
     "Tab"          => 0x09,
@@ -186,14 +206,58 @@ module Keys
     "AX"           => 0xE1 # Japan only
   }
 
+  GAMEPAD_LIST = {
+    "Button A"       => 0x00,
+    "Button B"       => 0x01,
+    "Button X"       => 0x02,
+    "Button Y"       => 0x03,
+    "Button Back"    => 0x04,
+    "Button Guide"   => 0x05,
+    "Button Start"   => 0x06,
+    "Left Stick"     => 0x07,
+    "Right Stick"    => 0x08,
+    "Left Shoulder"  => 0x09,
+    "Right Shoulder" => 0x0A,
+    "D-Pad Up"       => 0x0B,
+    "D-Pad Down"     => 0x0C,
+    "D-Pad Left"     => 0x0D,
+    "D-Pad Right"    => 0x0E,
+    # The below ones are commented since they aren't working 
+    # properly in my last test.
+#   "Button Misc"    => 0x0F, # Xbox Series X share button, PS5 microphone button, Nintendo Switch Pro capture button, Amazon Luna microphone button
+#   "Paddle 1"       => 0x10, # Xbox Elite paddle P1 (upper left, facing the back)
+#   "Paddle 2"       => 0x11, # Xbox Elite paddle P3 (upper right, facing the back)
+#   "Paddle 3"       => 0x12, # Xbox Elite paddle P2 (lower left, facing the back)
+#   "Paddle 4"       => 0x13, # Xbox Elite paddle P4 (lower right, facing the back)
+#   "Touchpad"       => 0x14, # PS4/PS5 touchpad button
+  }
+
+  # This one is manually checked
+  GAMEPAD_AXIS_LIST = {
+    "Left Stick Left"   => Input::LEFT_STICK_LEFT,
+    "Left Stick Right"  => Input::LEFT_STICK_RIGHT,
+    "Left Stick Down"   => Input::LEFT_STICK_DOWN,
+    "Left Stick Up"     => Input::LEFT_STICK_UP,
+    "Right Stick Left"  => Input::RIGHT_STICK_LEFT,
+    "Right Stick Right" => Input::RIGHT_STICK_RIGHT,
+    "Right Stick Down"  => Input::RIGHT_STICK_DOWN,
+    "Right Stick Up"    => Input::RIGHT_STICK_UP,
+    "Left Trigger"      => Input::LEFT_TRIGGER,
+    "Right Trigger"     => Input::RIGHT_TRIGGER,
+  }
+
   def self.key_name(key_code)
-    return CONTROLS_LIST.key(key_code) if CONTROLS_LIST.key(key_code)
+    ret = KEYBOARD_LIST.key(key_code)
+    return ret if ret
+    ret = GAMEPAD_LIST.key(key_code - Input::GAMEPAD_OFFSET)
+    return ret if ret
     return key_code==0 ? "None" : "?"
   end 
 
   def self.key_code(key_name)
-    ret  = CONTROLS_LIST[key_name]
-    raise "The button #{key_name} no longer exists! " if !ret
+    ret  = KEYBOARD_LIST[key_name]
+    ret  = GAMEPAD_LIST[key_name] + Input::GAMEPAD_OFFSET if !ret
+    raise "The key #{key_name} no longer exists! " if !ret
     return ret
   end 
 
@@ -201,8 +265,13 @@ module Keys
     loop do
       Graphics.update
       Input.update
-      for key_code in CONTROLS_LIST.values
-        return key_code if Input.triggerex?(key_code)
+      for key_code in KEYBOARD_LIST.values
+        next if !Input.triggerex?(key_code)
+        return key_code
+      end
+      for original_code in GAMEPAD_LIST.values
+        next if !Input::Controller.triggerex?(original_code)
+        return original_code + Input::GAMEPAD_OFFSET 
       end
     end
   end
@@ -212,9 +281,20 @@ class ControlConfig
   attr_reader :control_action
   attr_accessor :key_code
 
-  def initialize(control_action, default_key)
+  def initialize(control_action, key=nil)
     @control_action = control_action
-    @key_code = Keys.key_code(default_key)
+    @key_code = Keys.key_code(key) if key
+  end
+
+  def self.new_by_code(control_action, key_code)
+    ret = self.new(control_action)
+    ret.key_code = key_code
+    return ret
+  end
+
+  # Create multiple per key and return an array with new initialized instances
+  def self.multiple_new(control_action, key_array)
+    return key_array.map{|key| self.new(control_action,key)}
   end
 
   def key_name
@@ -223,6 +303,9 @@ class ControlConfig
 end
 
 module Input
+  # Used this, so can use the same variable for both gamepad and keyboard.
+  GAMEPAD_OFFSET = 500
+
   class << self
     if !method_defined?(:_old_fl_press?)
       alias :_old_fl_press? :press?
@@ -252,31 +335,92 @@ module Input
 
     def pressex_array?(array)
       for item in array
-        return true if pressex?(item)
+        if item >= AXIS_OFFSET 
+          return true if pressed_axis?(item)
+        elsif item >= GAMEPAD_OFFSET
+          return true if Controller.pressex?(item - GAMEPAD_OFFSET)
+        else
+          return true if pressex?(item)
+        end
       end
       return false
     end
 
     def triggerex_array?(array)
       for item in array
-        return true if triggerex?(item)
+        if item >= AXIS_OFFSET 
+          return true if pressed_axis?(item)
+        elsif item >= GAMEPAD_OFFSET
+          return true if Controller.triggerex?(item - GAMEPAD_OFFSET)
+        else
+          return true if triggerex?(item)
+        end
       end
       return false
     end
 
     def repeatex_array?(array)
       for item in array
-        return true if repeatex?(item)
-        return true if triggerex?(item) # Fix for MKXP-Z issue
+        if item >= AXIS_OFFSET 
+          return true if pressed_axis?(item)
+        elsif item >= GAMEPAD_OFFSET
+          return true if Controller.repeatex?(item - GAMEPAD_OFFSET)
+          return true if Controller.triggerex?(item - GAMEPAD_OFFSET)
+        else
+          return true if repeatex?(item)
+          return true if triggerex?(item)
+        end
       end
       return false
     end
 
     def releaseex_array?(array)
       for item in array
-        return true if releaseex?(item)
+        if item >= AXIS_OFFSET 
+          return true if pressed_axis?(item)
+        elsif item >= GAMEPAD_OFFSET
+          return true if Controller.releaseex?(item - GAMEPAD_OFFSET)
+        else
+          return true if releaseex?(item)
+        end
       end
       return false
+    end
+
+    def press_ex_axis?(key)
+      return select_ex_axis(key) > AXIS_MIN
+    end
+
+    def select_ex_axis(key)
+      return case key
+        when LEFT_STICK_LEFT;   -Controller.axes_left[0]    
+        when LEFT_STICK_RIGHT;   Controller.axes_left[0] 
+        when LEFT_STICK_DOWN;   -Controller.axes_left[1]
+        when LEFT_STICK_UP;      Controller.axes_left[1]
+        when RIGHT_STICK_LEFT;  -Controller.axes_right[0]
+        when RIGHT_STICK_RIGHT;  Controller.axes_right[0]
+        when RIGHT_STICK_DOWN;  -Controller.axes_right[1]
+        when RIGHT_STICK_UP;     Controller.axes_right[1]
+        when LEFT_TRIGGER;       Controller.axes_trigger[0]
+        when RIGHT_TRIGGER;      Controller.axes_trigger[1]
+        else 0
+      end
+    end
+
+    def pressed_ex_axis?(key)
+      return case key
+        when LEFT_STICK_LEFT;   Controller.axes_left[0]    < -AXIS_MIN
+        when LEFT_STICK_RIGHT;  Controller.axes_left[0]    >  AXIS_MIN
+        when LEFT_STICK_DOWN;   Controller.axes_left[1]    < -AXIS_MIN
+        when LEFT_STICK_UP;     Controller.axes_left[1]    >  AXIS_MIN
+        when RIGHT_STICK_LEFT;  Controller.axes_right[0]   < -AXIS_MIN
+        when RIGHT_STICK_RIGHT; Controller.axes_right[0]   >  AXIS_MIN
+        when RIGHT_STICK_DOWN;  Controller.axes_right[1]   < -AXIS_MIN
+        when RIGHT_STICK_UP;    Controller.axes_right[1]   >  AXIS_MIN
+        when LEFT_TRIGGER;      Controller.axes_trigger[0] >  AXIS_MIN
+        when RIGHT_TRIGGER;     Controller.axes_trigger[1] >  AXIS_MIN
+        else false
+      end
     end
 
     def dir4
@@ -351,48 +495,172 @@ module Input
       end
     end
   end
+end if SET_CONTROLS_ENABLED
+
+# Actions handler to controllers. It has an array with all actions
+# Workaround to work with older script version saves in Window_PokemonControls
+class ActionControlHandler
+  def [](index)
+    return @data_array[index]
+  end
+
+  def size
+    return @data_array.size
+  end
+
+  def initialize(controls)
+    @data_array = create_data_array(
+      Keys.default_controls.map{|c| c.control_action}.uniq,
+      create_controls_per_action(controls)
+    )
+  end
+
+  def create_controls_per_action(controls)
+    ret = {}
+    for control in controls
+      ret[control.control_action] ||= []
+      ret[control.control_action].push(control)
+    end
+    return ret
+  end
+
+  def create_data_array(action_array, controls_per_action)
+    return action_array.map{|a| ActionControlData.new(a,controls_per_action[a])}
+  end
+
+  def create_save_control_array
+    return @data_array.map{|action_data| action_data.control_array}.flatten
+  end
+
+  def clear_keys_with_input(input)
+    for index in 0...size
+      key_index = 0
+      while key_index < self[index].size
+        if self[index].control_array[key_index].key_code==input
+          if self[index].size > 1
+            self[index].delete_key_at(key_index)
+            key_index-=1
+          else
+            self[index].control_array[key_index].key_code = 0
+          end
+        end
+        key_index+=1
+      end
+    end
+  end
+
+  def set_key(new_input, action_index, key_index)
+    if key_index >= self[action_index].size
+      self[action_index].add_key(new_input)
+      return
+    end
+    self[action_index].control_array[key_index].key_code = new_input
+  end
+
+  # def add_key(new_input, action_index)
+  #   @control_main_array.push(self[action_index].add_key(new_input))
+  # end
+
+  # def remove_key(action_index, key_index)
+  #   @control_main_array.delete(self[action_index].control_array[key_index])
+  #   self[action_index].delete_key_at(key_index)
+  # end
+end
+
+# Has an action, with all of his keys and controls
+class ActionControlData
+  attr_reader :name
+  attr_reader :control_array
+
+  def initialize(name, control_array)
+    @name = name
+    @control_array = control_array
+  end
+
+  def size
+    return @control_array.size
+  end
+
+  def has_any_key?
+    return size>1 || @control_array[0].key_code!=0
+  end
+
+  def key_code_equals?(index, key_code)
+    return size > index && @control_array[key_code].key_code == key_code
+  end
+
+  # All keys text, like "C, B"
+  def keys_text
+    return key_array.join(", ")
+  end
+
+  def key_array
+    return @control_array.map{|control| _INTL(control.key_name)}
+  end
+
+  # The value also need to be added in main array
+  # Return new added value
+  def add_key(new_input)
+    @control_array.push(ControlConfig.new_by_code(@name, new_input))
+    return @control_array[-1]
+  end
+
+  # The value also need to be removed from main array
+  def delete_key_at(index)
+    @control_array.delete_at(index)
+  end
 end
 
 class Window_PokemonControls < Window_DrawableCommand
   attr_reader :reading_input
-  attr_reader :controls
   attr_reader :changed
+
+  MAX_KEYS_PER_ACTION = 9
 
   DEFAULT_EXTRA_INDEX = 0
   EXIT_EXTRA_INDEX = 1
 
   def initialize(controls,x,y,width,height)
-    @controls = controls
+    @action_handler = ActionControlHandler.new(controls)
     @name_base_color   = Color.new(88,88,80)
     @name_shadow_color = Color.new(168,184,184)
     @sel_base_color    = Color.new(24,112,216)
     @sel_shadow_color  = Color.new(136,168,208)
-    @reading_input = false
+    @reading_key_index = nil
     @changed = false
     super(x,y,width,height)
   end
 
   def itemCount
-    return @controls.length+EXIT_EXTRA_INDEX+1
+    return @action_handler.size+EXIT_EXTRA_INDEX+1
+  end
+
+  def controls
+    return @action_handler.create_save_control_array
+  end
+
+  def reading_input?
+    return @reading_key_index != nil
   end
 
   def set_new_input(new_input)
-    @reading_input = false
-    return if @controls[@index].key_code==new_input
-    for control in @controls # Remove the same input for the same array
-      control.key_code = 0 if control.key_code==new_input
+    if @action_handler[@index].key_code_equals?(@reading_key_index, new_input)
+      @reading_key_index = nil
+      return
     end
-    @controls[@index].key_code=new_input
+    @action_handler.clear_keys_with_input(new_input)
+    @action_handler.set_key(new_input, @index, @reading_key_index)
+    @reading_key_index = nil
     @changed = true
     refresh
   end
 
   def on_exit_index?
-    return @controls.length + EXIT_EXTRA_INDEX == @index
+    return @action_handler.size + EXIT_EXTRA_INDEX == @index
   end
 
   def on_default_index?
-    return @controls.length + DEFAULT_EXTRA_INDEX == @index
+    return @action_handler.size + DEFAULT_EXTRA_INDEX == @index
   end
   
   def item_description
@@ -402,7 +670,7 @@ class Window_PokemonControls < Window_DrawableCommand
     elsif on_default_index?
       ret=_INTL("Restore the default controls.")
     else
-      ret= control_description(@controls[@index].control_action)
+      ret= control_description(@action_handler[@index].name)
     end
     return ret
   end 
@@ -422,22 +690,23 @@ class Window_PokemonControls < Window_DrawableCommand
     return hash.fetch(control_action, _INTL("Set the controls."))
   end
 
-  def drawItem(index,count,rect)
+  def drawItem(index,_count,rect)
     rect=drawCursor(index,rect)
-    name = case index-@controls.length
+    name = case index - @action_handler.size
       when DEFAULT_EXTRA_INDEX   ; _INTL("Default")
       when EXIT_EXTRA_INDEX      ; _INTL("Exit")
-      else                       ; @controls[index].control_action
+      else                       ; @action_handler[index].name
     end
-    width= rect.width*9/20
+    width= rect.width*6/20
     pbDrawShadowText(
       self.contents,rect.x,rect.y,width,rect.height,
       name,@name_base_color,@name_shadow_color
     )
     self.contents.draw_text(rect.x,rect.y,width,rect.height,name)
-    return if index>=@controls.length
-    value = _INTL(@controls[index].key_name)
+    return if index>=@action_handler.size
+    value = @action_handler[index].keys_text
     xpos = width+rect.x
+    width = rect.width*14/20
     pbDrawShadowText(
       self.contents,xpos,rect.y,width,rect.height,
       value,@sel_base_color,@sel_shadow_color
@@ -449,21 +718,75 @@ class Window_PokemonControls < Window_DrawableCommand
     oldindex=self.index
     super
     do_refresh=self.index!=oldindex
-    if self.active && self.index<=@controls.length
+    if self.active && self.index <= @action_handler.size
       if Input.trigger?(Input::C)
         if on_default_index?
           if pbConfirmMessage(_INTL("Are you sure? Anyway, you can exit this screen without keeping the changes."))
             pbPlayDecisionSE()
-            @controls = Keys.default_controls
+            @action_handler = ActionControlHandler.new(Keys.default_controls)
             @changed = true
             do_refresh = true
           end
-        elsif self.index<@controls.length
-          @reading_input = true
+        elsif self.index<@action_handler.size
+          if !@action_handler[index].has_any_key?
+            @reading_key_index = 0 # Replace input
+          else
+            do_refresh ||= open_action_menu
+          end
         end
       end
     end
     refresh if do_refresh
+  end
+
+  # Return if a refresh is necessary
+  def open_action_menu
+    command = pbMessage(_INTL("What you want to do?"),[
+      _INTL("Replace new key"), _INTL("Add key"), 
+      _INTL("Remove key"), _INTL("Cancel")
+    ],4)
+    case command
+    when 0 # Replace
+      if @action_handler[index].size==1
+        @reading_key_index = 0
+      else
+        @reading_key_index = choose_control_key(
+          self.index, _INTL("Choose an assigned key.") 
+        )
+      end
+    when 1 # Add
+      if MAX_KEYS_PER_ACTION == @action_handler[index].size
+        pbMessage(_INTL(
+          "You can't add more than {1} keys to an action!",
+          MAX_KEYS_PER_ACTION
+        ))
+      else
+        @reading_key_index = @action_handler[index].size
+      end
+    when 2 # Remove
+      if @action_handler[index].size==1
+        pbMessage(_INTL("You can't remove a key when there was only one!"))
+      else
+        key_index = choose_control_key(
+          self.index, _INTL("Choose an assigned key.") 
+        )
+        if key_index
+          @action_handler[index].delete_key_at(key_index)
+          return true
+        end
+      end
+    end
+    return false
+  end
+
+  def choose_control_key(index, message)
+    ret = pbMessage(
+      message, 
+      @action_handler[index].key_array + [_INTL("Cancel")], 
+      @action_handler[index].size + 1
+    )
+    ret = nil if ret==@action_handler[index].size
+    return ret
   end
 end
 
@@ -502,7 +825,7 @@ class PokemonControls_Scene
       Input.update
       update
       should_refresh_text = @sprites["controlwindow"].index!=last_index
-      if @sprites["controlwindow"].reading_input
+      if @sprites["controlwindow"].reading_input?
         @sprites["textbox"].text=_INTL("Press a new key.")
         @sprites["controlwindow"].set_new_input(Keys.detect_key)
         should_refresh_text = true
@@ -582,4 +905,4 @@ MenuHandlers.add(:pause_menu, :controls, {
     open_set_controls_ui(menu)
     next false
   }
-})
+}) if SET_CONTROLS_ENABLED
