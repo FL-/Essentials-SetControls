@@ -12,7 +12,13 @@
 #
 #== NOTES ======================================================================
 #
+# Look at 'self.default_controls' and below for default controls and default
+# names.
+#
 # '$PokemonSystem.game_controls = nil' resets the controls.
+#
+# 'open_set_controls_ui' opens the control UI. You can call it from places like
+# an event.
 #
 # This script, by default, doesn't allows the player to redefine some commands
 # like F8 (screenshot key), but if the player assign an action to this key,
@@ -24,7 +30,7 @@
 if !PluginManager.installed?("Set the Controls Screen")
   PluginManager.register({                                                 
     :name    => "Set the Controls Screen",                                        
-    :version => "1.2",                                                     
+    :version => "1.2.1",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
     :credits => "FL"
   })
@@ -32,17 +38,31 @@ end
 
 # Change it to false for easily disable this script, without affecting saves.
 # After changing this value, close and open the game window.
-SET_CONTROLS_ENABLED = false
+SET_CONTROLS_ENABLED = true
 
-# Open the controls UI.
-# You can call this method directly from other places like an event.
-def open_set_controls_ui(menu_to_refresh=nil)
-  scene=PokemonControls_Scene.new
-  screen=PokemonControlsScreen.new(scene)
-  pbFadeOutIn {
-    screen.start_screen
-    menu_to_refresh.pbRefresh if menu_to_refresh
-  }
+class ControlConfig
+  attr_reader :control_action
+  attr_accessor :key_code
+
+  def initialize(control_action, key=nil)
+    @control_action = control_action
+    @key_code = Keys.key_code(key) if key
+  end
+
+  def self.new_by_code(control_action, key_code)
+    ret = self.new(control_action)
+    ret.key_code = key_code
+    return ret
+  end
+
+  # Create multiple per key and return an array with new initialized instances
+  def self.multiple_new(control_action, key_array)
+    return key_array.map{|key| self.new(control_action,key)}
+  end
+
+  def key_name
+    return Keys.key_name(@key_code)
+  end
 end
 
 module Input
@@ -63,7 +83,181 @@ module Input
   RIGHT_STICK_UP    = 0x07 + AXIS_OFFSET
   LEFT_TRIGGER      = 0x09 + AXIS_OFFSET
   RIGHT_TRIGGER     = 0x0B + AXIS_OFFSET
-end
+
+  class << self
+    if !method_defined?(:_old_fl_press?)
+      alias :_old_fl_press? :press?
+      def press?(button)
+        key = buttonToKey(button)
+        return key ? pressex_array?(key) : _old_fl_press?(button)
+      end
+
+      alias :_old_fl_trigger? :trigger?
+      def trigger?(button)
+        key = buttonToKey(button)
+        return key ? triggerex_array?(key) : _old_fl_trigger?(button)
+      end
+
+      alias :_old_fl_repeat? :repeat?
+      def repeat?(button)
+        key = buttonToKey(button)
+        return key ? repeatex_array?(key) : _old_fl_repeat?(button)
+      end
+
+      alias :_old_fl_release? :release?
+      def release?(button)
+        key = buttonToKey(button)
+        return key ? releaseex_array?(key) : _old_fl_release?(button)
+      end
+    end
+
+    def pressex_array?(array)
+      for item in array
+        if item >= AXIS_OFFSET 
+          return true if pressed_axis?(item)
+        elsif item >= GAMEPAD_OFFSET
+          return true if Controller.pressex?(item - GAMEPAD_OFFSET)
+        else
+          return true if pressex?(item)
+        end
+      end
+      return false
+    end
+
+    def triggerex_array?(array)
+      for item in array
+        if item >= AXIS_OFFSET 
+          return true if pressed_axis?(item)
+        elsif item >= GAMEPAD_OFFSET
+          return true if Controller.triggerex?(item - GAMEPAD_OFFSET)
+        else
+          return true if triggerex?(item)
+        end
+      end
+      return false
+    end
+
+    def repeatex_array?(array)
+      for item in array
+        if item >= AXIS_OFFSET 
+          return true if pressed_axis?(item)
+        elsif item >= GAMEPAD_OFFSET
+          return true if Controller.repeatex?(item - GAMEPAD_OFFSET)
+          return true if Controller.triggerex?(item - GAMEPAD_OFFSET)
+        else
+          return true if repeatex?(item)
+          return true if triggerex?(item)
+        end
+      end
+      return false
+    end
+
+    def releaseex_array?(array)
+      for item in array
+        if item >= AXIS_OFFSET 
+          return true if pressed_axis?(item)
+        elsif item >= GAMEPAD_OFFSET
+          return true if Controller.releaseex?(item - GAMEPAD_OFFSET)
+        else
+          return true if releaseex?(item)
+        end
+      end
+      return false
+    end
+
+    def press_ex_axis?(key)
+      return select_ex_axis(key) > AXIS_MIN
+    end
+
+    def select_ex_axis(key)
+      return case key
+        when LEFT_STICK_LEFT;   -Controller.axes_left[0]    
+        when LEFT_STICK_RIGHT;   Controller.axes_left[0] 
+        when LEFT_STICK_DOWN;   -Controller.axes_left[1]
+        when LEFT_STICK_UP;      Controller.axes_left[1]
+        when RIGHT_STICK_LEFT;  -Controller.axes_right[0]
+        when RIGHT_STICK_RIGHT;  Controller.axes_right[0]
+        when RIGHT_STICK_DOWN;  -Controller.axes_right[1]
+        when RIGHT_STICK_UP;     Controller.axes_right[1]
+        when LEFT_TRIGGER;       Controller.axes_trigger[0]
+        when RIGHT_TRIGGER;      Controller.axes_trigger[1]
+        else 0
+      end
+    end
+
+    def dir4
+      return 0 if press?(DOWN) && press?(UP)
+      return 0 if press?(LEFT) && press?(RIGHT)
+      for button in [DOWN,LEFT,RIGHT,UP]
+        return button if press?(button)
+      end
+      return 0
+    end
+
+    def dir8
+      buttons = []
+      for b in [DOWN,LEFT,RIGHT,UP]
+        buttons.push(b) if press?(b)
+      end
+      if buttons.length==0
+        return 0
+      elsif buttons.length==1
+        return buttons[0]
+      elsif buttons.length==2
+        return 0 if (buttons[0]==DOWN && buttons[1]==UP)
+        return 0 if (buttons[0]==LEFT && buttons[1]==RIGHT)
+      end
+      up_down    = 0
+      left_right = 0
+      for b in buttons
+        up_down    = b if up_down==0 && (b==UP || b==DOWN)
+        left_right = b if left_right==0 && (b==LEFT || b==RIGHT)
+      end
+      if up_down==DOWN
+        return 1 if left_right==LEFT
+        return 3 if left_right==RIGHT
+        return 2
+      elsif up_down==UP
+        return 7 if left_right==LEFT
+        return 9 if left_right==RIGHT
+        return 8
+      else
+        return 4 if left_right==LEFT
+        return 6 if left_right==RIGHT
+        return 0
+      end
+    end
+
+    def buttonToKey(button)
+      $PokemonSystem = PokemonSystem.new if !$PokemonSystem
+      return case button
+        when Input::DOWN
+          $PokemonSystem.game_control_code("Down")
+        when Input::LEFT
+          $PokemonSystem.game_control_code("Left")
+        when Input::RIGHT
+          $PokemonSystem.game_control_code("Right")
+        when Input::UP
+          $PokemonSystem.game_control_code("Up")
+        when Input::ACTION # Z, W, Y, Shift
+          $PokemonSystem.game_control_code("Menu")
+        when Input::BACK # X, ESC
+          $PokemonSystem.game_control_code("Cancel")
+        when Input::USE # C, ENTER, Space
+          $PokemonSystem.game_control_code("Action")
+        when Input::JUMPUP # A, Q, Page Up
+          $PokemonSystem.game_control_code("Scroll Up")
+        when Input::JUMPDOWN # S, Page Down
+          $PokemonSystem.game_control_code("Scroll Down")
+        when Input::SPECIAL # F, F5, Tab
+          $PokemonSystem.game_control_code("Ready Menu")
+          # AUX1 and AUX2 unused
+        else
+          nil
+      end
+    end
+  end
+end if SET_CONTROLS_ENABLED
 
 module Keys
   # Here you can change the default values
@@ -206,6 +400,7 @@ module Keys
     "AX"           => 0xE1 # Japan only
   }
 
+  # Available buttons at gamepad.
   GAMEPAD_LIST = {
     "Button A"       => 0x00,
     "Button B"       => 0x01,
@@ -232,18 +427,19 @@ module Keys
 #   "Touchpad"       => 0x14, # PS4/PS5 touchpad button
   }
 
+  # Available axis at gamepad.
   # This one is manually checked
   GAMEPAD_AXIS_LIST = {
-    "Left Stick Left"   => Input::LEFT_STICK_LEFT,
-    "Left Stick Right"  => Input::LEFT_STICK_RIGHT,
-    "Left Stick Down"   => Input::LEFT_STICK_DOWN,
-    "Left Stick Up"     => Input::LEFT_STICK_UP,
-    "Right Stick Left"  => Input::RIGHT_STICK_LEFT,
-    "Right Stick Right" => Input::RIGHT_STICK_RIGHT,
-    "Right Stick Down"  => Input::RIGHT_STICK_DOWN,
-    "Right Stick Up"    => Input::RIGHT_STICK_UP,
-    "Left Trigger"      => Input::LEFT_TRIGGER,
-    "Right Trigger"     => Input::RIGHT_TRIGGER,
+    "LStick Left"   => Input::LEFT_STICK_LEFT,
+    "LStick Right"  => Input::LEFT_STICK_RIGHT,
+    "LStick Down"   => Input::LEFT_STICK_DOWN,
+    "LStick Up"     => Input::LEFT_STICK_UP,
+    "RStick Left"   => Input::RIGHT_STICK_LEFT,
+    "RStick Right"  => Input::RIGHT_STICK_RIGHT,
+    "RStick Down"   => Input::RIGHT_STICK_DOWN,
+    "RStick Up"     => Input::RIGHT_STICK_UP,
+    "Left Trigger"  => Input::LEFT_TRIGGER,
+    "Right Trigger" => Input::RIGHT_TRIGGER,
   }
 
   def self.key_name(key_code)
@@ -275,227 +471,32 @@ module Keys
       end
     end
   end
-end 
+end
 
-class ControlConfig
-  attr_reader :control_action
-  attr_accessor :key_code
-
-  def initialize(control_action, key=nil)
-    @control_action = control_action
-    @key_code = Keys.key_code(key) if key
+class PokemonSystem
+  attr_writer :game_controls
+  def game_controls
+    @game_controls = Keys.default_controls if !@game_controls
+    return @game_controls
   end
 
-  def self.new_by_code(control_action, key_code)
-    ret = self.new(control_action)
-    ret.key_code = key_code
+  def game_control_code(control_action)
+    ret = []
+    for control in game_controls
+      ret.push(control.key_code) if control.control_action == control_action
+    end
     return ret
-  end
-
-  # Create multiple per key and return an array with new initialized instances
-  def self.multiple_new(control_action, key_array)
-    return key_array.map{|key| self.new(control_action,key)}
-  end
-
-  def key_name
-    return Keys.key_name(@key_code)
   end
 end
 
-module Input
-  # Used this, so can use the same variable for both gamepad and keyboard.
-  GAMEPAD_OFFSET = 500
-
-  class << self
-    if !method_defined?(:_old_fl_press?)
-      alias :_old_fl_press? :press?
-      def press?(button)
-        key = buttonToKey(button)
-        return key ? pressex_array?(key) : _old_fl_press?(button)
-      end
-
-      alias :_old_fl_trigger? :trigger?
-      def trigger?(button)
-        key = buttonToKey(button)
-        return key ? triggerex_array?(key) : _old_fl_trigger?(button)
-      end
-
-      alias :_old_fl_repeat? :repeat?
-      def repeat?(button)
-        key = buttonToKey(button)
-        return key ? repeatex_array?(key) : _old_fl_repeat?(button)
-      end
-
-      alias :_old_fl_release? :release?
-      def release?(button)
-        key = buttonToKey(button)
-        return key ? releaseex_array?(key) : _old_fl_release?(button)
-      end
-    end
-
-    def pressex_array?(array)
-      for item in array
-        if item >= AXIS_OFFSET 
-          return true if pressed_axis?(item)
-        elsif item >= GAMEPAD_OFFSET
-          return true if Controller.pressex?(item - GAMEPAD_OFFSET)
-        else
-          return true if pressex?(item)
-        end
-      end
-      return false
-    end
-
-    def triggerex_array?(array)
-      for item in array
-        if item >= AXIS_OFFSET 
-          return true if pressed_axis?(item)
-        elsif item >= GAMEPAD_OFFSET
-          return true if Controller.triggerex?(item - GAMEPAD_OFFSET)
-        else
-          return true if triggerex?(item)
-        end
-      end
-      return false
-    end
-
-    def repeatex_array?(array)
-      for item in array
-        if item >= AXIS_OFFSET 
-          return true if pressed_axis?(item)
-        elsif item >= GAMEPAD_OFFSET
-          return true if Controller.repeatex?(item - GAMEPAD_OFFSET)
-          return true if Controller.triggerex?(item - GAMEPAD_OFFSET)
-        else
-          return true if repeatex?(item)
-          return true if triggerex?(item)
-        end
-      end
-      return false
-    end
-
-    def releaseex_array?(array)
-      for item in array
-        if item >= AXIS_OFFSET 
-          return true if pressed_axis?(item)
-        elsif item >= GAMEPAD_OFFSET
-          return true if Controller.releaseex?(item - GAMEPAD_OFFSET)
-        else
-          return true if releaseex?(item)
-        end
-      end
-      return false
-    end
-
-    def press_ex_axis?(key)
-      return select_ex_axis(key) > AXIS_MIN
-    end
-
-    def select_ex_axis(key)
-      return case key
-        when LEFT_STICK_LEFT;   -Controller.axes_left[0]    
-        when LEFT_STICK_RIGHT;   Controller.axes_left[0] 
-        when LEFT_STICK_DOWN;   -Controller.axes_left[1]
-        when LEFT_STICK_UP;      Controller.axes_left[1]
-        when RIGHT_STICK_LEFT;  -Controller.axes_right[0]
-        when RIGHT_STICK_RIGHT;  Controller.axes_right[0]
-        when RIGHT_STICK_DOWN;  -Controller.axes_right[1]
-        when RIGHT_STICK_UP;     Controller.axes_right[1]
-        when LEFT_TRIGGER;       Controller.axes_trigger[0]
-        when RIGHT_TRIGGER;      Controller.axes_trigger[1]
-        else 0
-      end
-    end
-
-    def pressed_ex_axis?(key)
-      return case key
-        when LEFT_STICK_LEFT;   Controller.axes_left[0]    < -AXIS_MIN
-        when LEFT_STICK_RIGHT;  Controller.axes_left[0]    >  AXIS_MIN
-        when LEFT_STICK_DOWN;   Controller.axes_left[1]    < -AXIS_MIN
-        when LEFT_STICK_UP;     Controller.axes_left[1]    >  AXIS_MIN
-        when RIGHT_STICK_LEFT;  Controller.axes_right[0]   < -AXIS_MIN
-        when RIGHT_STICK_RIGHT; Controller.axes_right[0]   >  AXIS_MIN
-        when RIGHT_STICK_DOWN;  Controller.axes_right[1]   < -AXIS_MIN
-        when RIGHT_STICK_UP;    Controller.axes_right[1]   >  AXIS_MIN
-        when LEFT_TRIGGER;      Controller.axes_trigger[0] >  AXIS_MIN
-        when RIGHT_TRIGGER;     Controller.axes_trigger[1] >  AXIS_MIN
-        else false
-      end
-    end
-
-    def dir4
-      return 0 if press?(DOWN) && press?(UP)
-      return 0 if press?(LEFT) && press?(RIGHT)
-      for button in [DOWN,LEFT,RIGHT,UP]
-        return button if press?(button)
-      end
-      return 0
-    end
-
-    def dir8
-      buttons = []
-      for b in [DOWN,LEFT,RIGHT,UP]
-        buttons.push(b) if press?(b)
-      end
-      if buttons.length==0
-        return 0
-      elsif buttons.length==1
-        return buttons[0]
-      elsif buttons.length==2
-        return 0 if (buttons[0]==DOWN && buttons[1]==UP)
-        return 0 if (buttons[0]==LEFT && buttons[1]==RIGHT)
-      end
-      up_down    = 0
-      left_right = 0
-      for b in buttons
-        up_down    = b if up_down==0 && (b==UP || b==DOWN)
-        left_right = b if left_right==0 && (b==LEFT || b==RIGHT)
-      end
-      if up_down==DOWN
-        return 1 if left_right==LEFT
-        return 3 if left_right==RIGHT
-        return 2
-      elsif up_down==UP
-        return 7 if left_right==LEFT
-        return 9 if left_right==RIGHT
-        return 8
-      else
-        return 4 if left_right==LEFT
-        return 6 if left_right==RIGHT
-        return 0
-      end
-    end
-
-    def buttonToKey(button)
-      $PokemonSystem = PokemonSystem.new if !$PokemonSystem
-      case button
-        when Input::DOWN
-          return $PokemonSystem.game_control_code("Down")
-        when Input::LEFT
-          return $PokemonSystem.game_control_code("Left")
-        when Input::RIGHT
-          return $PokemonSystem.game_control_code("Right")
-        when Input::UP
-          return $PokemonSystem.game_control_code("Up")
-        when Input::ACTION # Z, W, Y, Shift
-          return $PokemonSystem.game_control_code("Menu")
-        when Input::BACK # X, ESC
-          return $PokemonSystem.game_control_code("Cancel")
-        when Input::USE # C, ENTER, Space
-          return $PokemonSystem.game_control_code("Action")
-        when Input::JUMPUP # A, Q, Page Up
-          return $PokemonSystem.game_control_code("Scroll Up")
-        when Input::JUMPDOWN # S, Page Down
-          return $PokemonSystem.game_control_code("Scroll Down")
-        when Input::SPECIAL # F, F5, Tab
-          return $PokemonSystem.game_control_code("Ready Menu")
-          # AUX1 and AUX2 unused
-        else
-          return nil
-      end
-    end
-  end
-end if SET_CONTROLS_ENABLED
+def open_set_controls_ui(menu_to_refresh=nil)
+  scene=PokemonControls_Scene.new
+  screen=PokemonControlsScreen.new(scene)
+  pbFadeOutIn {
+    screen.start_screen
+    menu_to_refresh.pbRefresh if menu_to_refresh
+  }
+end
 
 # Actions handler to controllers. It has an array with all actions
 # Workaround to work with older script version saves in Window_PokemonControls
@@ -556,15 +557,6 @@ class ActionControlHandler
     end
     self[action_index].control_array[key_index].key_code = new_input
   end
-
-  # def add_key(new_input, action_index)
-  #   @control_main_array.push(self[action_index].add_key(new_input))
-  # end
-
-  # def remove_key(action_index, key_index)
-  #   @control_main_array.delete(self[action_index].control_array[key_index])
-  #   self[action_index].delete_key_at(key_index)
-  # end
 end
 
 # Has an action, with all of his keys and controls
@@ -878,22 +870,6 @@ class PokemonControlsScreen
     @scene.start_scene
     @scene.main
     @scene.end_scene
-  end
-end
-
-class PokemonSystem
-  attr_writer :game_controls
-  def game_controls
-    @game_controls = Keys.default_controls if !@game_controls
-    return @game_controls
-  end
-
-  def game_control_code(control_action)
-    ret = []
-    for control in game_controls
-      ret.push(control.key_code) if control.control_action == control_action
-    end
-    return ret
   end
 end
 
