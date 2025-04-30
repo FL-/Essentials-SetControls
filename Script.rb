@@ -17,7 +17,7 @@
 #
 # '$PokemonSystem.game_controls = nil' resets the controls.
 #
-# 'open_set_controls_ui' opens the control UI. You can call it from places like
+# 'open_ui' opens the control UI. You can call it from places like
 # an event.
 #
 # This script, by default, doesn't allows the player to redefine some commands
@@ -30,7 +30,7 @@
 if !PluginManager.installed?("Set the Controls Screen")
   PluginManager.register({                                                 
     :name    => "Set the Controls Screen",                                        
-    :version => "1.2.1",                                                     
+    :version => "1.2.2",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
     :credits => "FL"
   })
@@ -40,6 +40,7 @@ end
 # After changing this value, close and open the game window.
 SET_CONTROLS_ENABLED = true
 
+# Class stored in saves.
 class ControlConfig
   attr_reader :control_action
   attr_accessor :key_code
@@ -473,6 +474,7 @@ module Keys
   end
 end
 
+# Existing class stored in saves.
 class PokemonSystem
   attr_writer :game_controls
   def game_controls
@@ -489,387 +491,389 @@ class PokemonSystem
   end
 end
 
-def open_set_controls_ui(menu_to_refresh=nil)
-  scene=PokemonControls_Scene.new
-  screen=PokemonControlsScreen.new(scene)
-  pbFadeOutIn {
-    screen.start_screen
-    menu_to_refresh.pbRefresh if menu_to_refresh
-  }
-end
-
-# Actions handler to controllers. It has an array with all actions
-# Workaround to work with older script version saves in Window_PokemonControls
-class ActionControlHandler
-  def [](index)
-    return @data_array[index]
-  end
-
-  def size
-    return @data_array.size
-  end
-
-  def initialize(controls)
-    @data_array = create_data_array(
-      Keys.default_controls.map{|c| c.control_action}.uniq,
-      create_controls_per_action(controls)
-    )
-  end
-
-  def create_controls_per_action(controls)
-    ret = {}
-    for control in controls
-      ret[control.control_action] ||= []
-      ret[control.control_action].push(control)
-    end
-    return ret
-  end
-
-  def create_data_array(action_array, controls_per_action)
-    return action_array.map{|a| ActionControlData.new(a,controls_per_action[a])}
-  end
-
-  def create_save_control_array
-    return @data_array.map{|action_data| action_data.control_array}.flatten
-  end
-
-  def clear_keys_with_input(input)
-    for index in 0...size
-      key_index = 0
-      while key_index < self[index].size
-        if self[index].control_array[key_index].key_code==input
-          if self[index].size > 1
-            self[index].delete_key_at(key_index)
-            key_index-=1
-          else
-            self[index].control_array[key_index].key_code = 0
-          end
-        end
-        key_index+=1
-      end
-    end
-  end
-
-  def set_key(new_input, action_index, key_index)
-    if key_index >= self[action_index].size
-      self[action_index].add_key(new_input)
-      return
-    end
-    self[action_index].control_array[key_index].key_code = new_input
-  end
-end
-
-# Has an action, with all of his keys and controls
-class ActionControlData
-  attr_reader :name
-  attr_reader :control_array
-
-  def initialize(name, control_array)
-    @name = name
-    @control_array = control_array
-  end
-
-  def size
-    return @control_array.size
-  end
-
-  def has_any_key?
-    return size>1 || @control_array[0].key_code!=0
-  end
-
-  def key_code_equals?(index, key_code)
-    return size > index && @control_array[key_code].key_code == key_code
-  end
-
-  # All keys text, like "C, B"
-  def keys_text
-    return key_array.join(", ")
-  end
-
-  def key_array
-    return @control_array.map{|control| _INTL(control.key_name)}
-  end
-
-  # The value also need to be added in main array
-  # Return new added value
-  def add_key(new_input)
-    @control_array.push(ControlConfig.new_by_code(@name, new_input))
-    return @control_array[-1]
-  end
-
-  # The value also need to be removed from main array
-  def delete_key_at(index)
-    @control_array.delete_at(index)
-  end
-end
-
-class Window_PokemonControls < Window_DrawableCommand
-  attr_reader :reading_input
-  attr_reader :changed
-
-  MAX_KEYS_PER_ACTION = 9
-
-  DEFAULT_EXTRA_INDEX = 0
-  EXIT_EXTRA_INDEX = 1
-
-  def initialize(controls,x,y,width,height)
-    @action_handler = ActionControlHandler.new(controls)
-    @name_base_color   = Color.new(88,88,80)
-    @name_shadow_color = Color.new(168,184,184)
-    @sel_base_color    = Color.new(24,112,216)
-    @sel_shadow_color  = Color.new(136,168,208)
-    @reading_key_index = nil
-    @changed = false
-    super(x,y,width,height)
-  end
-
-  def itemCount
-    return @action_handler.size+EXIT_EXTRA_INDEX+1
-  end
-
-  def controls
-    return @action_handler.create_save_control_array
-  end
-
-  def reading_input?
-    return @reading_key_index != nil
-  end
-
-  def set_new_input(new_input)
-    if @action_handler[@index].key_code_equals?(@reading_key_index, new_input)
-      @reading_key_index = nil
-      return
-    end
-    @action_handler.clear_keys_with_input(new_input)
-    @action_handler.set_key(new_input, @index, @reading_key_index)
-    @reading_key_index = nil
-    @changed = true
-    refresh
-  end
-
-  def on_exit_index?
-    return @action_handler.size + EXIT_EXTRA_INDEX == @index
-  end
-
-  def on_default_index?
-    return @action_handler.size + DEFAULT_EXTRA_INDEX == @index
-  end
-  
-  def item_description
-    ret=nil
-    if on_exit_index?
-      ret=_INTL("Exit. If you changed anything, asks if you want to keep changes.")
-    elsif on_default_index?
-      ret=_INTL("Restore the default controls.")
-    else
-      ret= control_description(@action_handler[@index].name)
-    end
-    return ret
-  end 
-
-  def control_description(control_action)
-    hash = {}
-    hash["Down"        ] = _INTL("Moves the character. Select entries and navigate menus.")
-    hash["Left"        ] = hash["Down"]
-    hash["Right"       ] = hash["Down"]
-    hash["Up"          ] = hash["Down"]
-    hash["Action"      ] = _INTL("Confirm a choice, check things, talk to people, and move through text.")
-    hash["Cancel"      ] = _INTL("Exit, cancel a choice or mode, and move at field in a different speed.")
-    hash["Menu"        ] = _INTL("Open the menu. Also has various functions depending on context.")
-    hash["Scroll Up"   ] = _INTL("Advance quickly in menus.")
-    hash["Scroll Down" ] = hash[ "Scroll Up"]
-    hash["Ready Menu"  ] = _INTL("Open Ready Menu, with registered items and available field moves.")
-    return hash.fetch(control_action, _INTL("Set the controls."))
-  end
-
-  def drawItem(index,_count,rect)
-    rect=drawCursor(index,rect)
-    name = case index - @action_handler.size
-      when DEFAULT_EXTRA_INDEX   ; _INTL("Default")
-      when EXIT_EXTRA_INDEX      ; _INTL("Exit")
-      else                       ; @action_handler[index].name
-    end
-    width= rect.width*6/20
-    pbDrawShadowText(
-      self.contents,rect.x,rect.y,width,rect.height,
-      name,@name_base_color,@name_shadow_color
-    )
-    self.contents.draw_text(rect.x,rect.y,width,rect.height,name)
-    return if index>=@action_handler.size
-    value = @action_handler[index].keys_text
-    xpos = width+rect.x
-    width = rect.width*14/20
-    pbDrawShadowText(
-      self.contents,xpos,rect.y,width,rect.height,
-      value,@sel_base_color,@sel_shadow_color
-    )
-    self.contents.draw_text(xpos,rect.y,width,rect.height,value)
-  end
-
-  def update
-    oldindex=self.index
-    super
-    do_refresh=self.index!=oldindex
-    if self.active && self.index <= @action_handler.size
-      if Input.trigger?(Input::C)
-        if on_default_index?
-          if pbConfirmMessage(_INTL("Are you sure? Anyway, you can exit this screen without keeping the changes."))
-            pbPlayDecisionSE()
-            @action_handler = ActionControlHandler.new(Keys.default_controls)
-            @changed = true
-            do_refresh = true
-          end
-        elsif self.index<@action_handler.size
-          if !@action_handler[index].has_any_key?
-            @reading_key_index = 0 # Replace input
-          else
-            do_refresh ||= open_action_menu
-          end
-        end
-      end
-    end
-    refresh if do_refresh
-  end
-
-  # Return if a refresh is necessary
-  def open_action_menu
-    command = pbMessage(_INTL("What you want to do?"),[
-      _INTL("Replace new key"), _INTL("Add key"), 
-      _INTL("Remove key"), _INTL("Cancel")
-    ],4)
-    case command
-    when 0 # Replace
-      if @action_handler[index].size==1
-        @reading_key_index = 0
-      else
-        @reading_key_index = choose_control_key(
-          self.index, _INTL("Choose an assigned key.") 
-        )
-      end
-    when 1 # Add
-      if MAX_KEYS_PER_ACTION == @action_handler[index].size
-        pbMessage(_INTL(
-          "You can't add more than {1} keys to an action!",
-          MAX_KEYS_PER_ACTION
-        ))
-      else
-        @reading_key_index = @action_handler[index].size
-      end
-    when 2 # Remove
-      if @action_handler[index].size==1
-        pbMessage(_INTL("You can't remove a key when there was only one!"))
-      else
-        key_index = choose_control_key(
-          self.index, _INTL("Choose an assigned key.") 
-        )
-        if key_index
-          @action_handler[index].delete_key_at(key_index)
-          return true
-        end
-      end
-    end
-    return false
-  end
-
-  def choose_control_key(index, message)
-    ret = pbMessage(
-      message, 
-      @action_handler[index].key_array + [_INTL("Cancel")], 
-      @action_handler[index].size + 1
-    )
-    ret = nil if ret==@action_handler[index].size
-    return ret
-  end
-end
-
-class PokemonControls_Scene
-  def start_scene
-    @sprites={}
-    @viewport=Viewport.new(0,0,Graphics.width,Graphics.height)
-    @viewport.z=99999
-    @sprites["title"]=Window_UnformattedTextPokemon.newWithSize(
-      _INTL("Controls"),0,0,Graphics.width,64,@viewport
-    )
-    @sprites["textbox"]=pbCreateMessageWindow
-    @sprites["textbox"].letterbyletter=false
-    game_controls = $PokemonSystem.game_controls.map{|c| c.clone}
-    @sprites["controlwindow"]=Window_PokemonControls.new(
-      game_controls,0,@sprites["title"].height,Graphics.width,
-      Graphics.height-@sprites["title"].height-@sprites["textbox"].height
-    )
-    @sprites["controlwindow"].viewport=@viewport
-    @sprites["controlwindow"].visible=true
-    @changed = false
-    pbDeactivateWindows(@sprites)
-    pbFadeInAndShow(@sprites) { update }
-  end
-
-  def update
-    pbUpdateSpriteHash(@sprites)
-  end
-
-  def main
-    last_index=-1
-    should_refresh_text = false
-    pbActivateWindow(@sprites,"controlwindow"){
-    loop do
-      Graphics.update
-      Input.update
-      update
-      should_refresh_text = @sprites["controlwindow"].index!=last_index
-      if @sprites["controlwindow"].reading_input?
-        @sprites["textbox"].text=_INTL("Press a new key.")
-        @sprites["controlwindow"].set_new_input(Keys.detect_key)
-        should_refresh_text = true
-        @changed = true
-      else
-        if Input.trigger?(Input::B) || (
-          Input.trigger?(Input::C) && @sprites["controlwindow"].on_exit_index?
-        )
-          if(
-            @sprites["controlwindow"].changed && 
-            pbConfirmMessage(_INTL("Keep changes?"))
-          )
-            should_refresh_text = true # Visual effect
-            if @sprites["controlwindow"].controls.find{|c| c.key_code == 0}
-              @sprites["textbox"].text=_INTL("Fill all fields!")
-              should_refresh_text = false
-            else
-              $PokemonSystem.game_controls = @sprites["controlwindow"].controls
-              break
-            end
-          else
-            break
-          end
-        end
-      end
-      if should_refresh_text
-        if @sprites["textbox"].text!=@sprites["controlwindow"].item_description
-          @sprites["textbox"].text = @sprites["controlwindow"].item_description
-        end
-        last_index = @sprites["controlwindow"].index
-      end
-    end
+module SetControls
+  def self.open_ui(menu_to_refresh=nil)
+    scene=Scene.new
+    screen=Screen.new(scene)
+    pbFadeOutIn {
+      screen.start_screen
+      menu_to_refresh.pbRefresh if menu_to_refresh
     }
   end
 
-  def end_scene
-    pbFadeOutAndHide(@sprites) { update }
-    pbDisposeMessageWindow(@sprites["textbox"])
-    pbDisposeSpriteHash(@sprites)
-    @viewport.dispose
-  end
-end
+  # Actions handler. It has an array with all actions.
+  # Workaround to work with older script version saves in Window_Controls
+  class ActionHandler
+    def [](index)
+      return @data_array[index]
+    end
 
-class PokemonControlsScreen
-  def initialize(scene)
-    @scene=scene
+    def size
+      return @data_array.size
+    end
+
+    def initialize(controls)
+      @data_array = create_data_array(
+        Keys.default_controls.map{|c| c.control_action}.uniq,
+        create_controls_per_action(controls)
+      )
+    end
+
+    def create_controls_per_action(controls)
+      ret = {}
+      for control in controls
+        ret[control.control_action] ||= []
+        ret[control.control_action].push(control)
+      end
+      return ret
+    end
+
+    def create_data_array(action_array, controls_per_action)
+      return action_array.map{|a| ActionData.new(a,controls_per_action[a])}
+    end
+
+    def create_save_control_array
+      return @data_array.map{|action_data| action_data.control_array}.flatten
+    end
+
+    def clear_keys_with_input(input)
+      for index in 0...size
+        key_index = 0
+        while key_index < self[index].size
+          if self[index].control_array[key_index].key_code==input
+            if self[index].size > 1
+              self[index].delete_key_at(key_index)
+              key_index-=1
+            else
+              self[index].control_array[key_index].key_code = 0
+            end
+          end
+          key_index+=1
+        end
+      end
+    end
+
+    def set_key(new_input, action_index, key_index)
+      if key_index >= self[action_index].size
+        self[action_index].add_key(new_input)
+        return
+      end
+      self[action_index].control_array[key_index].key_code = new_input
+    end
   end
 
-  def start_screen
-    @scene.start_scene
-    @scene.main
-    @scene.end_scene
+  # Has an action, with all of his keys and controls
+  class ActionData
+    attr_reader :name
+    attr_reader :control_array
+
+    def initialize(name, control_array)
+      @name = name
+      @control_array = control_array
+    end
+
+    def size
+      return @control_array.size
+    end
+
+    def has_any_key?
+      return size>1 || @control_array[0].key_code!=0
+    end
+
+    def key_code_equals?(index, key_code)
+      return size > index && @control_array[key_code].key_code == key_code
+    end
+
+    # All keys text, like "C, B"
+    def keys_text
+      return key_array.join(", ")
+    end
+
+    def key_array
+      return @control_array.map{|control| _INTL(control.key_name)}
+    end
+
+    # The value also need to be added in main array
+    # Return new added value
+    def add_key(new_input)
+      @control_array.push(ControlConfig.new_by_code(@name, new_input))
+      return @control_array[-1]
+    end
+
+    # The value also need to be removed from main array
+    def delete_key_at(index)
+      @control_array.delete_at(index)
+    end
+  end
+
+  class Window_Controls < Window_DrawableCommand
+    attr_reader :reading_input
+    attr_reader :changed
+
+    MAX_KEYS_PER_ACTION = 9
+
+    DEFAULT_EXTRA_INDEX = 0
+    EXIT_EXTRA_INDEX = 1
+
+    def initialize(controls,x,y,width,height)
+      @action_handler = ActionHandler.new(controls)
+      @name_base_color   = Color.new(88,88,80)
+      @name_shadow_color = Color.new(168,184,184)
+      @sel_base_color    = Color.new(24,112,216)
+      @sel_shadow_color  = Color.new(136,168,208)
+      @reading_key_index = nil
+      @changed = false
+      super(x,y,width,height)
+    end
+
+    def itemCount
+      return @action_handler.size+EXIT_EXTRA_INDEX+1
+    end
+
+    def controls
+      return @action_handler.create_save_control_array
+    end
+
+    def reading_input?
+      return @reading_key_index != nil
+    end
+
+    def set_new_input(new_input)
+      if @action_handler[@index].key_code_equals?(@reading_key_index, new_input)
+        @reading_key_index = nil
+        return
+      end
+      @action_handler.clear_keys_with_input(new_input)
+      @action_handler.set_key(new_input, @index, @reading_key_index)
+      @reading_key_index = nil
+      @changed = true
+      refresh
+    end
+
+    def on_exit_index?
+      return @action_handler.size + EXIT_EXTRA_INDEX == @index
+    end
+
+    def on_default_index?
+      return @action_handler.size + DEFAULT_EXTRA_INDEX == @index
+    end
+    
+    def item_description
+      ret=nil
+      if on_exit_index?
+        ret=_INTL("Exit. If you changed anything, asks if you want to keep changes.")
+      elsif on_default_index?
+        ret=_INTL("Restore the default controls.")
+      else
+        ret= control_description(@action_handler[@index].name)
+      end
+      return ret
+    end 
+
+    def control_description(control_action)
+      hash = {}
+      hash["Down"        ] = _INTL("Moves the character. Select entries and navigate menus.")
+      hash["Left"        ] = hash["Down"]
+      hash["Right"       ] = hash["Down"]
+      hash["Up"          ] = hash["Down"]
+      hash["Action"      ] = _INTL("Confirm a choice, check things, talk to people, and move through text.")
+      hash["Cancel"      ] = _INTL("Exit, cancel a choice or mode, and move at field in a different speed.")
+      hash["Menu"        ] = _INTL("Open the menu. Also has various functions depending on context.")
+      hash["Scroll Up"   ] = _INTL("Advance quickly in menus.")
+      hash["Scroll Down" ] = hash[ "Scroll Up"]
+      hash["Ready Menu"  ] = _INTL("Open Ready Menu, with registered items and available field moves.")
+      return hash.fetch(control_action, _INTL("Set the controls."))
+    end
+
+    def drawItem(index,_count,rect)
+      rect=drawCursor(index,rect)
+      name = case index - @action_handler.size
+        when DEFAULT_EXTRA_INDEX   ; _INTL("Default")
+        when EXIT_EXTRA_INDEX      ; _INTL("Exit")
+        else                       ; @action_handler[index].name
+      end
+      width= rect.width*6/20
+      pbDrawShadowText(
+        self.contents,rect.x,rect.y,width,rect.height,
+        name,@name_base_color,@name_shadow_color
+      )
+      self.contents.draw_text(rect.x,rect.y,width,rect.height,name)
+      return if index>=@action_handler.size
+      value = @action_handler[index].keys_text
+      xpos = width+rect.x
+      width = rect.width*14/20
+      pbDrawShadowText(
+        self.contents,xpos,rect.y,width,rect.height,
+        value,@sel_base_color,@sel_shadow_color
+      )
+      self.contents.draw_text(xpos,rect.y,width,rect.height,value)
+    end
+
+    def update
+      oldindex=self.index
+      super
+      do_refresh=self.index!=oldindex
+      if self.active && self.index <= @action_handler.size
+        if Input.trigger?(Input::C)
+          if on_default_index?
+            if pbConfirmMessage(_INTL("Are you sure? Anyway, you can exit this screen without keeping the changes."))
+              pbPlayDecisionSE()
+              @action_handler = ActionHandler.new(Keys.default_controls)
+              @changed = true
+              do_refresh = true
+            end
+          elsif self.index<@action_handler.size
+            if !@action_handler[index].has_any_key?
+              @reading_key_index = 0 # Replace input
+            else
+              do_refresh ||= open_action_menu
+            end
+          end
+        end
+      end
+      refresh if do_refresh
+    end
+
+    # Return if a refresh is necessary
+    def open_action_menu
+      command = pbMessage(_INTL("What you want to do?"),[
+        _INTL("Replace new key"), _INTL("Add key"), 
+        _INTL("Remove key"), _INTL("Cancel")
+      ],4)
+      case command
+      when 0 # Replace
+        if @action_handler[index].size==1
+          @reading_key_index = 0
+        else
+          @reading_key_index = choose_control_key(
+            self.index, _INTL("Choose an assigned key.") 
+          )
+        end
+      when 1 # Add
+        if MAX_KEYS_PER_ACTION == @action_handler[index].size
+          pbMessage(_INTL(
+            "You can't add more than {1} keys to an action!",
+            MAX_KEYS_PER_ACTION
+          ))
+        else
+          @reading_key_index = @action_handler[index].size
+        end
+      when 2 # Remove
+        if @action_handler[index].size==1
+          pbMessage(_INTL("You can't remove a key when there was only one!"))
+        else
+          key_index = choose_control_key(
+            self.index, _INTL("Choose an assigned key.") 
+          )
+          if key_index
+            @action_handler[index].delete_key_at(key_index)
+            return true
+          end
+        end
+      end
+      return false
+    end
+
+    def choose_control_key(index, message)
+      ret = pbMessage(
+        message, 
+        @action_handler[index].key_array + [_INTL("Cancel")], 
+        @action_handler[index].size + 1
+      )
+      ret = nil if ret==@action_handler[index].size
+      return ret
+    end
+  end
+
+  class Scene
+    def start_scene
+      @sprites={}
+      @viewport=Viewport.new(0,0,Graphics.width,Graphics.height)
+      @viewport.z=99999
+      @sprites["title"]=Window_UnformattedTextPokemon.newWithSize(
+        _INTL("Controls"),0,0,Graphics.width,64,@viewport
+      )
+      @sprites["textbox"]=pbCreateMessageWindow
+      @sprites["textbox"].letterbyletter=false
+      game_controls = $PokemonSystem.game_controls.map{|c| c.clone}
+      @sprites["controlwindow"]=Window_Controls.new(
+        game_controls,0,@sprites["title"].height,Graphics.width,
+        Graphics.height-@sprites["title"].height-@sprites["textbox"].height
+      )
+      @sprites["controlwindow"].viewport=@viewport
+      @sprites["controlwindow"].visible=true
+      @changed = false
+      pbDeactivateWindows(@sprites)
+      pbFadeInAndShow(@sprites) { update }
+    end
+
+    def update
+      pbUpdateSpriteHash(@sprites)
+    end
+
+    def main
+      last_index=-1
+      should_refresh_text = false
+      pbActivateWindow(@sprites,"controlwindow"){
+      loop do
+        Graphics.update
+        Input.update
+        update
+        should_refresh_text = @sprites["controlwindow"].index!=last_index
+        if @sprites["controlwindow"].reading_input?
+          @sprites["textbox"].text=_INTL("Press a new key.")
+          @sprites["controlwindow"].set_new_input(Keys.detect_key)
+          should_refresh_text = true
+          @changed = true
+        else
+          if Input.trigger?(Input::B) || (
+            Input.trigger?(Input::C) && @sprites["controlwindow"].on_exit_index?
+          )
+            if(
+              @sprites["controlwindow"].changed && 
+              pbConfirmMessage(_INTL("Keep changes?"))
+            )
+              should_refresh_text = true # Visual effect
+              if @sprites["controlwindow"].controls.find{|c| c.key_code == 0}
+                @sprites["textbox"].text=_INTL("Fill all fields!")
+                should_refresh_text = false
+              else
+                $PokemonSystem.game_controls = @sprites["controlwindow"].controls
+                break
+              end
+            else
+              break
+            end
+          end
+        end
+        if should_refresh_text
+          if @sprites["textbox"].text!=@sprites["controlwindow"].item_description
+            @sprites["textbox"].text = @sprites["controlwindow"].item_description
+          end
+          last_index = @sprites["controlwindow"].index
+        end
+      end
+      }
+    end
+
+    def end_scene
+      pbFadeOutAndHide(@sprites) { update }
+      pbDisposeMessageWindow(@sprites["textbox"])
+      pbDisposeSpriteHash(@sprites)
+      @viewport.dispose
+    end
+  end
+
+  class Screen
+    def initialize(scene)
+      @scene=scene
+    end
+
+    def start_screen
+      @scene.start_scene
+      @scene.main
+      @scene.end_scene
+    end
   end
 end
 
@@ -878,7 +882,7 @@ MenuHandlers.add(:pause_menu, :controls, {
   "order"     => 75,
   "effect"    => proc { |menu|
     pbPlayDecisionSE
-    open_set_controls_ui(menu)
+    SetControls.open_ui(menu)
     next false
   }
 }) if SET_CONTROLS_ENABLED
