@@ -3,8 +3,9 @@
 #===============================================================================
 #
 # This script is for Pokémon Essentials. It creates a "Set the controls" screen
-# on pause menu, allowing the player to map the actions to the keys in keyboard, 
-# ignoring the values defined on F1. You can also define the default controls.
+# on pause menu, allowing the player to map the actions to the keys in keyboard
+# and buttons in a gamepad, ignoring the values defined on F1. You can also
+# define the default controls.
 #
 #== INSTALLATION ===============================================================
 #
@@ -17,7 +18,7 @@
 #
 # '$PokemonSystem.game_controls = nil' resets the controls.
 #
-# 'open_ui' opens the control UI. You can call it from places like
+# 'SetControls.open_ui' opens the control UI. You can call it from places like
 # an event.
 #
 # This script, by default, doesn't allows the player to redefine some commands
@@ -25,20 +26,34 @@
 # like the "Cancel" action, this key will do this action AND take screenshots
 # when pressed. Remember that F12 will reset the game.
 #
+# 'SetControls.key_array(act)' return the key/button array, where act is the 
+# action name (like "Cancel"). You can use it to set in a variable and inform
+# player of a certain key/button, example in an event:
+#
+#   @>Script: $game_variables[42] =
+#           :   SetControls.key_array("Cancel")[0]
+#   @>Text: Press \v[42] to exit from menus.
+#
 #===============================================================================
 
 if !PluginManager.installed?("Set the Controls Screen")
   PluginManager.register({                                                 
     :name    => "Set the Controls Screen",                                        
-    :version => "1.2.2",                                                     
+    :version => "1.2.3",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
     :credits => "FL"
   })
 end
 
-# Change it to false for easily disable this script, without affecting saves.
-# After changing this value, close and open the game window.
-SET_CONTROLS_ENABLED = true
+module SetControls
+  # Change it to false for easily disable this script, without affecting saves.
+  # After changing this value, close and open the game window.
+  ENABLED = true
+
+  # Control screen won't allow player to add more keys/button to a single
+  # action after reaching at this number. 
+  MAX_KEYS_PER_ACTION = 9
+end
 
 # Class stored in saves.
 class ControlConfig
@@ -67,23 +82,26 @@ class ControlConfig
 end
 
 module Input
-  # Used this, so can use the same variable for both gamepad and keyboard.
+  AXIS_ENABLED = true
+  # Used offsets to support the same variable for both gamepad and keyboard.
   GAMEPAD_OFFSET = 500
   AXIS_OFFSET = 100 + GAMEPAD_OFFSET
-  AXIS_MIN = 0.5
-  AXIS_MAX = 0.95
+  AXIS_THRESHOLD = 0.5
+  AXIS_REPEAT_INITIAL_DELAY = 0.5
+  AXIS_REPEAT_DELAY = 0.1
 
   # Using this for manual check
-  LEFT_STICK_LEFT   = 0x00 + AXIS_OFFSET
-  LEFT_STICK_RIGHT  = 0x01 + AXIS_OFFSET
-  LEFT_STICK_DOWN   = 0x02 + AXIS_OFFSET
-  LEFT_STICK_UP     = 0x03 + AXIS_OFFSET
-  RIGHT_STICK_LEFT  = 0x04 + AXIS_OFFSET
-  RIGHT_STICK_RIGHT = 0x05 + AXIS_OFFSET
-  RIGHT_STICK_DOWN  = 0x06 + AXIS_OFFSET
-  RIGHT_STICK_UP    = 0x07 + AXIS_OFFSET
-  LEFT_TRIGGER      = 0x09 + AXIS_OFFSET
-  RIGHT_TRIGGER     = 0x0B + AXIS_OFFSET
+  LEFT_STICK_LEFT   = 0x00
+  LEFT_STICK_RIGHT  = 0x01
+  LEFT_STICK_UP     = 0x02
+  LEFT_STICK_DOWN   = 0x03
+  RIGHT_STICK_LEFT  = 0x04
+  RIGHT_STICK_RIGHT = 0x05
+  RIGHT_STICK_UP    = 0x06
+  RIGHT_STICK_DOWN  = 0x07
+  LEFT_TRIGGER      = 0x09
+  RIGHT_TRIGGER     = 0x0B
+  AXIS_COUNT        = RIGHT_TRIGGER+1
 
   class << self
     if !method_defined?(:_old_fl_press?)
@@ -115,7 +133,7 @@ module Input
     def pressex_array?(array)
       for item in array
         if item >= AXIS_OFFSET 
-          return true if pressed_axis?(item)
+          return true if axis_pressex?(item - AXIS_OFFSET)
         elsif item >= GAMEPAD_OFFSET
           return true if Controller.pressex?(item - GAMEPAD_OFFSET)
         else
@@ -128,7 +146,7 @@ module Input
     def triggerex_array?(array)
       for item in array
         if item >= AXIS_OFFSET 
-          return true if pressed_axis?(item)
+          return true if axis_triggerex?(item - AXIS_OFFSET)
         elsif item >= GAMEPAD_OFFSET
           return true if Controller.triggerex?(item - GAMEPAD_OFFSET)
         else
@@ -141,7 +159,8 @@ module Input
     def repeatex_array?(array)
       for item in array
         if item >= AXIS_OFFSET 
-          return true if pressed_axis?(item)
+          # Trigger is checked in axis_repeatex?
+          return true if axis_repeatex?(item - AXIS_OFFSET)
         elsif item >= GAMEPAD_OFFSET
           return true if Controller.repeatex?(item - GAMEPAD_OFFSET)
           return true if Controller.triggerex?(item - GAMEPAD_OFFSET)
@@ -156,7 +175,7 @@ module Input
     def releaseex_array?(array)
       for item in array
         if item >= AXIS_OFFSET 
-          return true if pressed_axis?(item)
+          return true if axis_releaseex?(item - AXIS_OFFSET)
         elsif item >= GAMEPAD_OFFSET
           return true if Controller.releaseex?(item - GAMEPAD_OFFSET)
         else
@@ -164,26 +183,6 @@ module Input
         end
       end
       return false
-    end
-
-    def press_ex_axis?(key)
-      return select_ex_axis(key) > AXIS_MIN
-    end
-
-    def select_ex_axis(key)
-      return case key
-        when LEFT_STICK_LEFT;   -Controller.axes_left[0]    
-        when LEFT_STICK_RIGHT;   Controller.axes_left[0] 
-        when LEFT_STICK_DOWN;   -Controller.axes_left[1]
-        when LEFT_STICK_UP;      Controller.axes_left[1]
-        when RIGHT_STICK_LEFT;  -Controller.axes_right[0]
-        when RIGHT_STICK_RIGHT;  Controller.axes_right[0]
-        when RIGHT_STICK_DOWN;  -Controller.axes_right[1]
-        when RIGHT_STICK_UP;     Controller.axes_right[1]
-        when LEFT_TRIGGER;       Controller.axes_trigger[0]
-        when RIGHT_TRIGGER;      Controller.axes_trigger[1]
-        else 0
-      end
     end
 
     def dir4
@@ -257,23 +256,107 @@ module Input
           nil
       end
     end
+
+    @@axis_states = Array.new(AXIS_COUNT, false)
+    @@axis_states_old      = @@axis_states.clone
+    @@axis_states_trigger  = @@axis_states.clone
+    @@axis_states_repeat   = @@axis_states.clone
+    @@axis_states_release  = @@axis_states.clone
+    @@axis_states_trigger_time = Array.new(@@axis_states.size, 0.0)
+    @@axis_states_repeat_time = Array.new(@@axis_states.size, 0.0)
+    
+    def refresh_axis_array
+      for i in 0...@@axis_states.size
+        @@axis_states_old[i] = @@axis_states[i]
+        @@axis_states[i] = axis_state(i) > AXIS_THRESHOLD
+        @@axis_states_trigger[i]=  @@axis_states[i] && !@@axis_states_old[i]
+        @@axis_states_release[i]= !@@axis_states[i] &&  @@axis_states_old[i]
+        @@axis_states_trigger_time[i]= System.uptime if @@axis_states_trigger[i]
+        @@axis_states_repeat[i] = @@axis_states_trigger[i] || (
+          @@axis_states[i] && (
+            System.uptime >= @@axis_states_trigger_time[i] + AXIS_REPEAT_INITIAL_DELAY
+          ) && System.uptime >= @@axis_states_repeat_time[i] + AXIS_REPEAT_DELAY
+        )
+        @@axis_states_repeat_time[i] = System.uptime if @@axis_states_repeat[i]
+      end
+    end
+    
+    def axis_state(key)
+      return case key
+        when LEFT_STICK_LEFT;   -Controller.axes_left[0]    
+        when LEFT_STICK_RIGHT;   Controller.axes_left[0] 
+        when LEFT_STICK_UP;     -Controller.axes_left[1]
+        when LEFT_STICK_DOWN;    Controller.axes_left[1]
+        when RIGHT_STICK_LEFT;  -Controller.axes_right[0]
+        when RIGHT_STICK_RIGHT;  Controller.axes_right[0]
+        when RIGHT_STICK_UP;    -Controller.axes_right[1]
+        when RIGHT_STICK_DOWN;   Controller.axes_right[1]
+        when LEFT_TRIGGER;       Controller.axes_trigger[0]
+        when RIGHT_TRIGGER;      Controller.axes_trigger[1]
+        else 0
+      end
+    end
+
+    def axis_pressex?(index)
+      return @@axis_states[index] 
+    end
+    def axis_triggerex?(index)
+      return @@axis_states_trigger[index] 
+    end
+    def axis_repeatex?(index)
+      return @@axis_states_repeat[index] 
+    end
+    def axis_releaseex?(index)
+      return @@axis_states_release[index] 
+    end
+
+    # For compatibility with other scripts, use update_KGC_ScreenCapture
+    # instead of Input.update
+    if (
+        AXIS_ENABLED && 
+        defined?(Controller) && !method_defined?(:_old_fl_update_kgc)
+    )
+      alias :_old_fl_update_kgc :update_KGC_ScreenCapture
+      def update_KGC_ScreenCapture
+        _old_fl_update_kgc
+        refresh_axis_array
+      end
+    end
   end
-end if SET_CONTROLS_ENABLED
+end if SetControls::ENABLED
 
 module Keys
   # Here you can change the default values
   def self.default_controls
+    return default_controls_no_gamepad if !Input.const_defined?(:Controller)
     return (
-      ControlConfig.multiple_new("Down", ["Down", "D-Pad Down"]) +
-      ControlConfig.multiple_new("Left", ["Left", "D-Pad Left"]) +
-      ControlConfig.multiple_new("Right", ["Right", "D-Pad Right"]) +
-      ControlConfig.multiple_new("Up", ["Up", "D-Pad Up"]) +
+      ControlConfig.multiple_new("Down", ["Down","D-Pad Down","L-Stick Down"]) +
+      ControlConfig.multiple_new("Left", ["Left","D-Pad Left","L-Stick Left"]) +
+      ControlConfig.multiple_new("Right", ["Right", "D-Pad Right", "L-Stick Right"]) +
+      ControlConfig.multiple_new("Up", ["Up", "D-Pad Up","L-Stick Up"]) +
       ControlConfig.multiple_new("Action", ["C","Enter","Space", "Button A"]) +
       ControlConfig.multiple_new("Cancel", ["X","Esc", "Numpad 0", "Button B"])+
       ControlConfig.multiple_new("Menu", ["Z", "Shift", "Button X"]) +
-      ControlConfig.multiple_new("Scroll Up", ["A", "Right Shoulder"]) +
-      ControlConfig.multiple_new("Scroll Down", ["S", "Left Shoulder"]) +
+      ControlConfig.multiple_new("Scroll Up", ["A", "Left Shoulder"]) +
+      ControlConfig.multiple_new("Scroll Down", ["S", "Right Shoulder"]) +
       ControlConfig.multiple_new("Ready Menu", ["D","Button Y"]) 
+    )
+  end 
+
+  # Used only in Essentials v20.1 or lower. You can copy it to above method
+  # if you want remove gamepad buttons in default values
+  def self.default_controls_no_gamepad
+    return (
+      ControlConfig.multiple_new("Down", ["Down"]) +
+      ControlConfig.multiple_new("Left", ["Left"]) +
+      ControlConfig.multiple_new("Right", ["Right"]) +
+      ControlConfig.multiple_new("Up", ["Up"]) +
+      ControlConfig.multiple_new("Action", ["C","Enter","Space"]) +
+      ControlConfig.multiple_new("Cancel", ["X","Esc"])+
+      ControlConfig.multiple_new("Menu", ["Z", "Shift"]) +
+      ControlConfig.multiple_new("Scroll Up", ["A"]) +
+      ControlConfig.multiple_new("Scroll Down", ["S"]) +
+      ControlConfig.multiple_new("Ready Menu", ["D"]) 
     )
   end 
 
@@ -431,14 +514,14 @@ module Keys
   # Available axis at gamepad.
   # This one is manually checked
   GAMEPAD_AXIS_LIST = {
-    "LStick Left"   => Input::LEFT_STICK_LEFT,
-    "LStick Right"  => Input::LEFT_STICK_RIGHT,
-    "LStick Down"   => Input::LEFT_STICK_DOWN,
-    "LStick Up"     => Input::LEFT_STICK_UP,
+    "L-Stick Left"   => Input::LEFT_STICK_LEFT,
+    "L-Stick Right"  => Input::LEFT_STICK_RIGHT,
+    "L-Stick Up"     => Input::LEFT_STICK_UP,
+    "L-Stick Down"   => Input::LEFT_STICK_DOWN,
     "RStick Left"   => Input::RIGHT_STICK_LEFT,
     "RStick Right"  => Input::RIGHT_STICK_RIGHT,
-    "RStick Down"   => Input::RIGHT_STICK_DOWN,
     "RStick Up"     => Input::RIGHT_STICK_UP,
+    "RStick Down"   => Input::RIGHT_STICK_DOWN,
     "Left Trigger"  => Input::LEFT_TRIGGER,
     "Right Trigger" => Input::RIGHT_TRIGGER,
   }
@@ -448,12 +531,19 @@ module Keys
     return ret if ret
     ret = GAMEPAD_LIST.key(key_code - Input::GAMEPAD_OFFSET)
     return ret if ret
+    ret = GAMEPAD_AXIS_LIST.key(key_code - Input::AXIS_OFFSET)
+    return ret if ret
     return key_code==0 ? "None" : "?"
   end 
 
   def self.key_code(key_name)
     ret  = KEYBOARD_LIST[key_name]
-    ret  = GAMEPAD_LIST[key_name] + Input::GAMEPAD_OFFSET if !ret
+    if !ret && GAMEPAD_LIST.has_key?(key_name)
+      ret  = GAMEPAD_LIST[key_name] + Input::GAMEPAD_OFFSET
+    end
+    if !ret && GAMEPAD_AXIS_LIST.has_key?(key_name)
+      ret  = GAMEPAD_AXIS_LIST[key_name] + Input::AXIS_OFFSET
+    end
     raise "The key #{key_name} no longer exists! " if !ret
     return ret
   end 
@@ -466,13 +556,19 @@ module Keys
         next if !Input.triggerex?(key_code)
         return key_code
       end
-      for original_code in GAMEPAD_LIST.values
-        next if !Input::Controller.triggerex?(original_code)
-        return original_code + Input::GAMEPAD_OFFSET 
+      if Input.const_defined?(:Controller)
+        for original_code in GAMEPAD_LIST.values
+          next if !Input::Controller.triggerex?(original_code)
+          return original_code + Input::GAMEPAD_OFFSET 
+        end
+        for original_code in GAMEPAD_AXIS_LIST.values
+          next if !Input.axis_triggerex?(original_code)
+          return original_code + Input::AXIS_OFFSET 
+        end
       end
     end
   end
-end
+end if SetControls::ENABLED
 
 # Existing class stored in saves.
 class PokemonSystem
@@ -499,6 +595,13 @@ module SetControls
       screen.start_screen
       menu_to_refresh.pbRefresh if menu_to_refresh
     }
+  end
+
+  # Returns an array with all keys who does the action.
+  def self.key_array(action)
+    return $PokemonSystem.game_controls.find_all{|c| 
+      yield c.control_action==action
+    }.map{|c| c.key_name}
   end
 
   # Actions handler. It has an array with all actions.
@@ -581,7 +684,7 @@ module SetControls
     end
 
     def key_code_equals?(index, key_code)
-      return size > index && @control_array[key_code].key_code == key_code
+      return size > index && @control_array[index].key_code == key_code
     end
 
     # All keys text, like "C, B"
@@ -609,8 +712,6 @@ module SetControls
   class Window_Controls < Window_DrawableCommand
     attr_reader :reading_input
     attr_reader :changed
-
-    MAX_KEYS_PER_ACTION = 9
 
     DEFAULT_EXTRA_INDEX = 0
     EXIT_EXTRA_INDEX = 1
@@ -661,7 +762,9 @@ module SetControls
     def item_description
       ret=nil
       if on_exit_index?
-        ret=_INTL("Exit. If you changed anything, asks if you want to keep changes.")
+        ret=_INTL(
+          "Exit. If you changed anything, asks if you want to keep changes."
+      )
       elsif on_default_index?
         ret=_INTL("Restore the default controls.")
       else
@@ -812,9 +915,11 @@ module SetControls
     end
 
     def main
+      pbActivateWindow(@sprites,"controlwindow"){ main_loop}
+    end
+
+    def main_loop
       last_index=-1
-      should_refresh_text = false
-      pbActivateWindow(@sprites,"controlwindow"){
       loop do
         Graphics.update
         Input.update
@@ -838,7 +943,7 @@ module SetControls
                 @sprites["textbox"].text=_INTL("Fill all fields!")
                 should_refresh_text = false
               else
-                $PokemonSystem.game_controls = @sprites["controlwindow"].controls
+                $PokemonSystem.game_controls=@sprites["controlwindow"].controls
                 break
               end
             else
@@ -847,16 +952,18 @@ module SetControls
           end
         end
         if should_refresh_text
-          if @sprites["textbox"].text!=@sprites["controlwindow"].item_description
-            @sprites["textbox"].text = @sprites["controlwindow"].item_description
+          if(
+            @sprites["textbox"].text!=@sprites["controlwindow"].item_description
+          )
+            @sprites["textbox"].text=@sprites["controlwindow"].item_description
           end
           last_index = @sprites["controlwindow"].index
         end
       end
-      }
     end
 
     def end_scene
+      pbPlayCloseMenuSE
       pbFadeOutAndHide(@sprites) { update }
       pbDisposeMessageWindow(@sprites["textbox"])
       pbDisposeSpriteHash(@sprites)
@@ -885,4 +992,4 @@ MenuHandlers.add(:pause_menu, :controls, {
     SetControls.open_ui(menu)
     next false
   }
-}) if SET_CONTROLS_ENABLED
+}) if SetControls::ENABLED
