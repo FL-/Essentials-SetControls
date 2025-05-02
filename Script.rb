@@ -21,10 +21,16 @@
 # 'SetControls.open_ui' opens the control UI. You can call it from places like
 # an event.
 #
-# This script, by default, doesn't allows the player to redefine some commands
+# This script, by default, doesn't allow the player to redefine some commands
 # like F8 (screenshot key), but if the player assign an action to this key,
 # like the "Cancel" action, this key will do this action AND take screenshots
 # when pressed. Remember that F12 will reset the game.
+#
+# To add more actions, look the lines in this script where there is a
+# "Ready Menu" in, for example and do the same thing. You need to use defined
+# values in Input (like Input::SPECIAL, used in Ready Menu case or the unused
+# Input::AUX1 and Input::AUX2). This script also creates AUX3, AUX4 and AUX5,
+# but you can create more (just follows AUX5 format).
 #
 # 'SetControls.key_array(act)' return the key/button array, where act is the 
 # action name (like "Cancel"). You can use it to set in a variable and inform
@@ -39,7 +45,7 @@
 if !PluginManager.installed?("Set the Controls Screen")
   PluginManager.register({                                                 
     :name    => "Set the Controls Screen",                                        
-    :version => "1.2.3",                                                     
+    :version => "1.2.4",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
     :credits => "FL"
   })
@@ -82,6 +88,10 @@ class ControlConfig
 end
 
 module Input
+  AUX3 = 53
+  AUX4 = 54
+  AUX5 = 55
+
   AXIS_ENABLED = true
   # Used offsets to support the same variable for both gamepad and keyboard.
   GAMEPAD_OFFSET = 500
@@ -251,7 +261,16 @@ module Input
           $PokemonSystem.game_control_code("Scroll Down")
         when Input::SPECIAL # F, F5, Tab
           $PokemonSystem.game_control_code("Ready Menu")
-          # AUX1 and AUX2 unused
+        # when Input::AUX1
+        #   $PokemonSystem.game_control_code("Example A")
+        # when Input::AUX2
+        #   $PokemonSystem.game_control_code("Example B")
+        # when Input::AUX3
+        #   $PokemonSystem.game_control_code("Example C")
+        # when Input::AUX4
+        #   $PokemonSystem.game_control_code("Example D")
+        # when Input::AUX5
+        #   $PokemonSystem.game_control_code("Example E")
         else
           nil
       end
