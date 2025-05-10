@@ -26,6 +26,10 @@
 # like the "Cancel" action, this key will do this action AND take screenshots
 # when pressed. Remember that F12 will reset the game.
 #
+# You can comment keys/buttons in KEYBOARD_LIST (and gamepad ones) to remove
+# the key as available key for user. Remember to remove it from default
+# controls if it is in the list.
+#
 # To add more actions, look the lines in this script where there is a
 # "Ready Menu" in, for example and do the same thing. You need to use defined
 # values in Input (like Input::SPECIAL, used in Ready Menu case or the unused
@@ -45,7 +49,7 @@
 if !PluginManager.installed?("Set the Controls Screen")
   PluginManager.register({                                                 
     :name    => "Set the Controls Screen",                                        
-    :version => "1.2.4",                                                     
+    :version => "1.2.5",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
     :credits => "FL"
   })
@@ -55,6 +59,9 @@ module SetControls
   # Change it to false for easily disable this script, without affecting saves.
   # After changing this value, close and open the game window.
   ENABLED = true
+
+  # Automatic sort the keys by index. This way gamepad buttons always goes last.
+  AUTO_SORT = true
 
   # Control screen won't allow player to add more keys/button to a single
   # action after reaching at this number. 
@@ -678,9 +685,10 @@ module SetControls
     def set_key(new_input, action_index, key_index)
       if key_index >= self[action_index].size
         self[action_index].add_key(new_input)
-        return
+      else
+        self[action_index].control_array[key_index].key_code = new_input
       end
-      self[action_index].control_array[key_index].key_code = new_input
+      self[action_index].sort_keys! if SetControls::AUTO_SORT
     end
   end
 
@@ -692,6 +700,7 @@ module SetControls
     def initialize(name, control_array)
       @name = name
       @control_array = control_array
+      sort_keys! if SetControls::AUTO_SORT
     end
 
     def size
@@ -725,6 +734,14 @@ module SetControls
     # The value also need to be removed from main array
     def delete_key_at(index)
       @control_array.delete_at(index)
+    end
+
+    def sort_keys!
+      return if size <= 1
+      sorted_keys = @control_array.map{|c|c.key_code}.sort
+      for i in 0...size
+        @control_array[i].key_code = sorted_keys[i]
+      end
     end
   end
 
