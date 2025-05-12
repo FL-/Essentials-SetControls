@@ -49,7 +49,7 @@
 if !PluginManager.installed?("Set the Controls Screen")
   PluginManager.register({                                                 
     :name    => "Set the Controls Screen",                                        
-    :version => "1.2.5",                                                     
+    :version => "1.2.6",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
     :credits => "FL"
   })
@@ -626,7 +626,7 @@ module SetControls
   # Returns an array with all keys who does the action.
   def self.key_array(action)
     return $PokemonSystem.game_controls.find_all{|c| 
-      yield c.control_action==action
+      c.control_action==action
     }.map{|c| c.key_name}
   end
 
