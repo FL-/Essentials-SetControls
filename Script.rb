@@ -49,7 +49,7 @@
 if !PluginManager.installed?("Set the Controls Screen")
   PluginManager.register({                                                 
     :name    => "Set the Controls Screen",                                        
-    :version => "1.2.6",                                                     
+    :version => "1.2.7",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=309391",             
     :credits => "FL"
   })
@@ -906,6 +906,7 @@ module SetControls
           )
           if key_index
             @action_handler[index].delete_key_at(key_index)
+            @changed = true
             return true
           end
         end
